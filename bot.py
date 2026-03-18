@@ -1,9 +1,9 @@
 import os
 import sqlite3
 import logging
+import requests
 from datetime import datetime
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from flask import Flask, request
 import anthropic
 
 logging.basicConfig(level=logging.INFO)
@@ -11,8 +11,12 @@ logging.basicConfig(level=logging.INFO)
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 TEACHER_CHAT_ID = os.environ.get("TEACHER_CHAT_ID", "")
+RENDER_URL = os.environ["RENDER_URL"]
+
+TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+flask_app = Flask(__name__)
 
 SYSTEM_PROMPT = """Sos un tutor de matemática y física para alumnos de 5° año de secundaria en Argentina. Tu rol es acompañar a cada alumno en su aprendizaje de forma personalizada, paciente y alentadora.
 
@@ -63,13 +67,13 @@ def init_db():
 def detectar_tema(mensaje):
     mensaje = mensaje.lower()
     temas = {
-        "ecuaciones": ["ecuacion", "ecuación", "primer grado", "segundo grado", "raiz", "raíz", "discriminante"],
-        "trigonometría": ["seno", "coseno", "tangente", "pitagoras", "pitágoras", "hipotenusa", "angulo", "ángulo", "triangulo", "triángulo"],
+        "ecuaciones": ["ecuacion", "ecuacion", "primer grado", "segundo grado", "raiz", "discriminante"],
+        "trigonometria": ["seno", "coseno", "tangente", "pitagoras", "hipotenusa", "angulo", "triangulo"],
         "vectores": ["vector", "colineal", "coplanar", "resultante", "componente"],
-        "leyes de newton": ["newton", "fuerza", "masa", "aceleración", "aceleracion", "inercia", "equilibrio"],
-        "cinemática": ["velocidad", "posición", "posicion", "tiempo", "desplazamiento", "aceleración", "cinematica", "cinemática", "tiro"],
-        "movimiento circular": ["circular", "periodo", "período", "frecuencia", "rpm", "angular"],
-        "energía": ["energia", "energía", "trabajo", "potencia", "joule", "cinética", "cinetica", "potencial"],
+        "leyes de newton": ["newton", "fuerza", "masa", "aceleracion", "inercia", "equilibrio"],
+        "cinematica": ["velocidad", "posicion", "tiempo", "desplazamiento", "cinematica", "tiro"],
+        "movimiento circular": ["circular", "periodo", "frecuencia", "rpm", "angular"],
+        "energia": ["energia", "trabajo", "potencia", "joule", "cinetica", "potencial"],
     }
     for tema, palabras in temas.items():
         if any(p in mensaje for p in palabras):
@@ -90,65 +94,88 @@ def guardar_interaccion(alumno_id, alumno_nombre, mensaje, respuesta):
 def obtener_reporte():
     conn = sqlite3.connect("dudas.db")
     c = conn.cursor()
-
-    c.execute("""
-        SELECT alumno_nombre, COUNT(*) as total
-        FROM mensajes
-        GROUP BY alumno_id, alumno_nombre
-        ORDER BY total DESC
-    """)
+    c.execute("SELECT alumno_nombre, COUNT(*) as total FROM mensajes GROUP BY alumno_id, alumno_nombre ORDER BY total DESC")
     alumnos = c.fetchall()
-
-    c.execute("""
-        SELECT tema_detectado, COUNT(*) as total
-        FROM mensajes
-        GROUP BY tema_detectado
-        ORDER BY total DESC
-        LIMIT 8
-    """)
+    c.execute("SELECT tema_detectado, COUNT(*) as total FROM mensajes GROUP BY tema_detectado ORDER BY total DESC LIMIT 8")
     temas = c.fetchall()
-
-    c.execute("""
-        SELECT alumno_nombre, mensaje, fecha
-        FROM mensajes
-        ORDER BY fecha DESC
-        LIMIT 8
-    """)
+    c.execute("SELECT alumno_nombre, mensaje, fecha FROM mensajes ORDER BY fecha DESC LIMIT 8")
     recientes = c.fetchall()
-
     conn.close()
     return alumnos, temas, recientes
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    nombre = update.effective_user.first_name
-    await update.message.reply_text(
-        f"¡Hola {nombre}! 👋 Soy tu tutor de matemática y física de 5° año.\n\n"
+def send_message(chat_id, text, parse_mode=None):
+    payload = {"chat_id": chat_id, "text": text}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+    try:
+        requests.post(f"{TELEGRAM_API}/sendMessage", json=payload, timeout=10)
+    except Exception as e:
+        logging.error(f"Error enviando mensaje: {e}")
+
+def send_typing(chat_id):
+    try:
+        requests.post(f"{TELEGRAM_API}/sendChatAction", json={"chat_id": chat_id, "action": "typing"}, timeout=5)
+    except:
+        pass
+
+def handle_start(chat_id, first_name):
+    nombre = first_name or "estudiante"
+    send_message(chat_id,
+        f"Hola {nombre}! Soy tu tutor de matematica y fisica de 5 anio.\n\n"
         "Puedo ayudarte con:\n"
-        "📐 Ecuaciones de 1° y 2° grado\n"
-        "📏 Trigonometría y Pitágoras\n"
-        "↗️ Vectores\n"
-        "⚡ Leyes de Newton\n"
-        "🏃 Cinemática y movimiento circular\n"
-        "⚙️ Trabajo y energía\n\n"
-        "Contame: ¿con qué tema querés trabajar hoy?"
+        "- Ecuaciones de 1 y 2 grado\n"
+        "- Trigonometria y Pitagoras\n"
+        "- Vectores\n"
+        "- Leyes de Newton\n"
+        "- Cinematica y movimiento circular\n"
+        "- Trabajo y energia\n\n"
+        "Contame: con que tema queres trabajar hoy?"
     )
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    user_name = update.effective_user.first_name or "Alumno"
-    user_message = update.message.text
+def handle_reporte(chat_id, user_id):
+    if TEACHER_CHAT_ID and str(user_id) != TEACHER_CHAT_ID:
+        send_message(chat_id, "Este comando es solo para el docente.")
+        return
 
+    alumnos, temas, recientes = obtener_reporte()
+
+    if not alumnos:
+        send_message(chat_id, "Todavia no hay interacciones registradas.")
+        return
+
+    texto = "REPORTE DE ACTIVIDAD\n\n"
+    texto += "Consultas por alumno:\n"
+    for nombre, total in alumnos:
+        texto += f"- {nombre}: {total}\n"
+
+    texto += "\nTemas mas consultados:\n"
+    for tema, total in temas:
+        texto += f"- {tema}: {total} veces\n"
+
+    texto += "\nUltimas consultas:\n"
+    for nombre, mensaje, fecha in recientes:
+        fecha_corta = fecha[:10]
+        msg_corto = (mensaje[:55] + "...") if len(mensaje) > 55 else mensaje
+        texto += f"[{fecha_corta}] {nombre}: {msg_corto}\n"
+
+    send_message(chat_id, texto)
+
+def handle_reiniciar(chat_id, user_id):
+    conversation_histories.pop(user_id, None)
+    send_message(chat_id, "Listo! Empezamos de cero. Con que tema queres arrancar?")
+
+def handle_text(chat_id, user_id, user_name, text):
     if user_id not in conversation_histories:
         conversation_histories[user_id] = []
 
     history = conversation_histories[user_id]
-    history.append({"role": "user", "content": user_message})
+    history.append({"role": "user", "content": text})
 
     if len(history) > 20:
         history = history[-20:]
         conversation_histories[user_id] = history
 
-    await update.message.chat.send_action("typing")
+    send_typing(chat_id)
 
     try:
         response = client.messages.create(
@@ -157,64 +184,51 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             system=SYSTEM_PROMPT,
             messages=history
         )
-
         reply = response.content[0].text
         history.append({"role": "assistant", "content": reply})
-        guardar_interaccion(user_id, user_name, user_message, reply)
-        await update.message.reply_text(reply)
-
+        guardar_interaccion(user_id, user_name, text, reply)
+        send_message(chat_id, reply)
     except Exception as e:
-        logging.error(f"Error al llamar a la IA: {e}")
-        await update.message.reply_text(
-            "Uy, tuve un problema técnico. Intentá de nuevo en un momento. 🙏"
-        )
+        logging.error(f"Error IA: {e}")
+        send_message(chat_id, "Tuve un problema tecnico. Intenta de nuevo en un momento.")
 
-async def reporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if TEACHER_CHAT_ID and str(update.effective_user.id) != TEACHER_CHAT_ID:
-        await update.message.reply_text("Este comando es solo para el docente. 🔒")
-        return
+@flask_app.route("/webhook", methods=["POST"])
+def webhook():
+    data = request.get_json()
+    if not data or "message" not in data:
+        return "OK", 200
 
-    alumnos, temas, recientes = obtener_reporte()
+    message = data["message"]
+    chat_id = message["chat"]["id"]
+    user_id = message["from"]["id"]
+    user_name = message["from"].get("first_name", "Alumno")
+    text = message.get("text", "")
 
-    if not alumnos:
-        await update.message.reply_text("Todavía no hay interacciones registradas.")
-        return
+    if not text:
+        return "OK", 200
 
-    texto = "📊 *REPORTE DE ACTIVIDAD*\n\n"
+    if text == "/start":
+        handle_start(chat_id, user_name)
+    elif text == "/reporte":
+        handle_reporte(chat_id, user_id)
+    elif text == "/reiniciar":
+        handle_reiniciar(chat_id, user_id)
+    else:
+        handle_text(chat_id, user_id, user_name, text)
 
-    texto += "*👥 Consultas por alumno:*\n"
-    for nombre, total in alumnos:
-        barra = "▓" * min(total, 10)
-        texto += f"• {nombre}: {barra} {total}\n"
+    return "OK", 200
 
-    texto += "\n*📚 Temas más consultados:*\n"
-    for tema, total in temas:
-        texto += f"• {tema.capitalize()}: {total} veces\n"
+@flask_app.route("/")
+def health():
+    return "Bot activo", 200
 
-    texto += "\n*🕐 Últimas consultas:*\n"
-    for nombre, mensaje, fecha in recientes:
-        fecha_corta = fecha[:10]
-        msg_corto = (mensaje[:55] + "...") if len(mensaje) > 55 else mensaje
-        texto += f"[{fecha_corta}] *{nombre}*: _{msg_corto}_\n"
-
-    await update.message.reply_text(texto, parse_mode="Markdown")
-
-async def reiniciar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    conversation_histories.pop(user_id, None)
-    await update.message.reply_text(
-        "¡Listo! Empezamos de cero. 🔄 ¿Con qué tema querés arrancar?"
-    )
-
-def main():
-    init_db()
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("reporte", reporte))
-    app.add_handler(CommandHandler("reiniciar", reiniciar))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print("Bot iniciado ✅")
-    app.run_polling()
+def setup_webhook():
+    url = f"{RENDER_URL}/webhook"
+    resp = requests.post(f"{TELEGRAM_API}/setWebhook", json={"url": url})
+    logging.info(f"Webhook configurado: {resp.json()}")
 
 if __name__ == "__main__":
-    main()
+    init_db()
+    setup_webhook()
+    port = int(os.environ.get("PORT", 8080))
+    flask_app.run(host="0.0.0.0", port=port)
