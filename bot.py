@@ -4,7 +4,7 @@ import asyncio
 from flask import Flask, request
 from telegram import Update, Bot
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import google.generativeai as genai
+import from google import genai
 
 # --- CONFIGURACIÓN ---
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -13,8 +13,7 @@ TEACHER_ID = int(os.environ.get("TEACHER_CHAT_ID", 0))
 RENDER_URL = os.environ.get("RENDER_URL")
 
 # Configurar IA de Google
-genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+client = genai.Client(api_key="GEMINI_KEY")
 
 # Base de datos temporal (en memoria) para el reporte
 # Nota: En Render Free, esto se borra si el bot "duerme" por 15 min.
