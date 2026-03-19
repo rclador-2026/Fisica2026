@@ -82,5 +82,8 @@ if __name__ == "__main__":
     loop.run_until_complete(main())
     
     # Luego arrancamos Flask en el puerto que pide Render
+    if __name__ == "__main__":
+    # Esto solo se ejecuta si corres "python bot.py" manualmente
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+    
