@@ -1,43 +1,25 @@
-import os
 import logging
+import os
 import asyncio
 from flask import Flask, request
-from telegram import Update, Bot
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import from google import genai
+from telegram import Update
+from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
+from google import genai  # Nueva librería
 
 # --- CONFIGURACIÓN ---
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
-GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
-TEACHER_ID = int(os.environ.get("TEACHER_CHAT_ID", 0))
-RENDER_URL = os.environ.get("RENDER_URL")
+API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Configurar IA de Google
-client = genai.Client(api_key="GEMINI_KEY")
+# Inicializar cliente de Google GenAI
+client = genai.Client(api_key=API_KEY)
 
-# Base de datos temporal (en memoria) para el reporte
-# Nota: En Render Free, esto se borra si el bot "duerme" por 15 min.
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+
+# Diccionario simple para estadísticas (opcional)
 stats = {"consultas": 0, "alumnos": set(), "temas": []}
 
-# --- LÓGICA DEL BOT ---
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Hola! Soy tu Tutor IA. Preguntame lo que necesites de la materia.\n\nUsa /reiniciar si querés empezar de cero.")
-
-async def reiniciar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔄 Memoria limpia. ¿En qué puedo ayudarte ahora?")
-
-async def reporte(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id == TEACHER_ID:
-        resumen = (
-            f"📊 **Reporte para el Docente**\n"
-            f"- Consultas totales: {stats['consultas']}\n"
-            f"- Alumnos activos: {len(stats['alumnos'])}\n"
-            f"- Últimos temas: {', '.join(stats['temas'][-5:])}"
-        )
-        await update.message.reply_text(resumen, parse_mode='Markdown')
-    else:
-        await update.message.reply_text("❌ Comando solo para el docente.")
+    await update.message.reply_text("¡Hola! Soy tu tutor de Física. ¿En qué puedo ayudarte hoy?")
 
 async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
@@ -45,17 +27,19 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Actualizar estadísticas
     stats["consultas"] += 1
     stats["alumnos"].add(update.effective_user.id)
-    stats["temas"].append(user_text[:20]) # Guardamos el inicio del texto como "tema"
+    stats["temas"].append(user_text[:20])
 
-      try:
-        # Prompt para darle personalidad de tutor
+    try:
+        # Prompt con personalidad
         prompt = f"Actúa como un tutor educativo paciente y claro. Responde a esto: {user_text}"
         
+        # Nueva forma de llamar a Gemini
         response = client.models.generate_content(
             model="gemini-2.0-flash",
             contents=prompt
         )
-   await update.message.reply_text(response.text)
+        
+        await update.message.reply_text(response.text)
 
     except Exception as e:
         logging.error(f"Error Gemini: {e}")
@@ -63,32 +47,40 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # --- CONFIGURACIÓN DEL SERVIDOR (WEBHOOK) ---
 app = Flask(__name__)
-ptb_application = Application.builder().token(TOKEN).build()
+
+# Definimos la aplicación de Telegram de forma global
+ptb_application = ApplicationBuilder().token(TOKEN).build()
 
 @app.route(f"/{TOKEN}", methods=["POST"])
 async def webhook():
     if request.method == "POST":
         update = Update.de_json(request.get_json(force=True), ptb_application.bot)
         await ptb_application.process_update(update)
-    return "ok", 200
+        return "ok", 200
 
-@app.route("/")
+@app.route("/", methods=["GET"])
 def index():
-    return "Bot de Tutoría Activo", 200
+    return "Bot de Física en funcionamiento", 200
 
-async def setup_bot():
-    # Registrar comandos y mensajes
+async def main():
+    # Configurar los handlers
     ptb_application.add_handler(CommandHandler("start", start))
-    ptb_application.add_handler(CommandHandler("reiniciar", reiniciar))
-    ptb_application.add_handler(CommandHandler("reporte", reporte))
-    ptb_application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, responder))
+    ptb_application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), responder))
     
-    # Configurar Webhook en Telegram
-    await ptb_application.bot.set_webhook(url=f"{RENDER_URL}/{TOKEN}")
+    # IMPORTANTE: En Render con Webhook, inicializamos la app pero no usamos run_polling
     await ptb_application.initialize()
-    await ptb_application.start()
+    
+    # Aquí Flask se encarga del servidor, por lo que este async main
+    # sirve para preparar el bot de Telegram antes de que entren los requests.
+    logging.info("Bot inicializado correctamente.")
 
-# Iniciar procesos
+# --- ARRANQUE COMPATIBLE CON PYTHON 3.14 ---
 if __name__ == "__main__":
-        asyncio.run(main()) # Cambia 'main()' por el nombre de tu función principal
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    # Primero inicializamos el bot de forma asíncrona
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(main())
+    
+    # Luego arrancamos Flask en el puerto que pide Render
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
