@@ -47,14 +47,14 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stats["alumnos"].add(update.effective_user.id)
     stats["temas"].append(user_text[:20]) # Guardamos el inicio del texto como "tema"
 
-    try:
+      try:
         # Prompt para darle personalidad de tutor
         prompt = f"Actúa como un tutor educativo paciente y claro. Responde a esto: {user_text}"
+        
         response = client.models.generate_content(
-    model="gemini-2.0-flash", 
-    contents=prompt
-)
-await update.message.reply_text(response.text)
+            model="gemini-2.0-flash",
+            contents=prompt
+        )
     except Exception as e:
         logging.error(f"Error Gemini: {e}")
         await update.message.reply_text("Lo siento, tuve un problema procesando la respuesta. Reintentá en un momento.")
