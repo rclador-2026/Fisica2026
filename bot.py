@@ -55,6 +55,8 @@ async def responder(update: Update, context: ContextTypes.DEFAULT_TYPE):
             model="gemini-2.0-flash",
             contents=prompt
         )
+   await update.message.reply_text(response.text)
+
     except Exception as e:
         logging.error(f"Error Gemini: {e}")
         await update.message.reply_text("Lo siento, tuve un problema procesando la respuesta. Reintentá en un momento.")
