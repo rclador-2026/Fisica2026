@@ -4,7 +4,7 @@ import asyncio
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
-from google import genai  # Nueva librería
+import google.generativeai as genai
 
 # --- CONFIGURACIÓN ---
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
