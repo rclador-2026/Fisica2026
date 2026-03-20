@@ -16,7 +16,10 @@ def set_webhook():
     render_url = os.environ.get('RENDER_EXTERNAL_URL')
     resp = requests.post(url, json={"url": f"{render_url}/webhook"})
     return resp.json()
-
+@app.route('/modelos', methods=['GET'])
+def modelos():
+    models = client.models.list()
+    return str([m.name for m in models]) 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.get_json()
