@@ -20,23 +20,30 @@ def set_webhook():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.get_json()
-    
-    if data and "message" in data and "text" in data["message"]:
+
+    if data and "message" in data:
         chat_id = data["message"]["chat"]["id"]
-        user_text = data["message"]["text"]
-        
-        try:
-            response = client.models.generate_content(
-                model="gemini-1.5-flash",
-                contents=user_text
-            )
-            bot_response = response.text
+        user_text = data["message"].get("text", "")
 
+        if user_text == "/start":
             send_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-            requests.post(send_url, json={"chat_id": chat_id, "text": bot_response})
+            requests.post(send_url, json={"chat_id": chat_id, "text": "Hola! Soy tu bot. Escribime algo."})
 
-        except Exception as e:
-            print(f"Error: {e}")
+        elif user_text:
+            try:
+                response = client.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=user_text
+                )
+                bot_response = response.text
+                send_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+                requests.post(send_url, json={"chat_id": chat_id, "text": bot_response})
+
+            except Exception as e:
+                # Muestra el error en logs Y te lo manda por Telegram
+                print(f"ERROR GEMINI: {e}")
+                send_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+                requests.post(send_url, json={"chat_id": chat_id, "text": f"Error: {e}"})
 
     return "ok", 200
 
