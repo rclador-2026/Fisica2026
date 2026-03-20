@@ -27,12 +27,12 @@ def webhook():
 
         if user_text == "/start":
             send_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-            requests.post(send_url, json={"chat_id": chat_id, "text": "Hola! Soy tu bot. Escribime algo."})
+            requests.post(send_url, json={"chat_id": chat_id, "text": "Hola! Soy tu profe virtual. Tienes dudas ?."})
 
         elif user_text:
             try:
                 response = client.models.generate_content(
-                    model="gemini-2.0-flash",
+                    model="gemini-1.5-flash-8b",
                     contents=user_text
                 )
                 bot_response = response.text
