@@ -1,5 +1,5 @@
 import os
-import google.generativeai as genai
+from google import genai
 from flask import Flask, request
 import requests
 
