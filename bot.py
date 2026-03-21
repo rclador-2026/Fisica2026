@@ -10,7 +10,31 @@ GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 # ── Estado en memoria ─────────────────────────────────────────────────────────
-user_state = {}  # { chat_id: { "grupo": "...", "tema": "...", "accion": "..." } }
+user_state = {}
+# Estructura: {
+#   chat_id: {
+#     "grupo": "...",
+#     "tema": "...",
+#     "accion": "...",
+#     "esperando_respuesta": True/False,
+#     "ejercicio_actual": "texto del ejercicio generado"
+#   }
+# }
+
+# ── Repartidos por tema ───────────────────────────────────────────────────────
+REPARTIDOS = {
+    "📐 Herramientas Matematicas":  "https://drive.google.com/uc?export=download&id=ID_DEL_ARCHIVO",
+    "🍎 Leyes de Newton":           "https://drive.google.com/uc?export=download&id=ID_DEL_ARCHIVO",
+    "🚀 Cinematica":                "https://drive.google.com/uc?export=download&id=ID_DEL_ARCHIVO",
+    "➡️ Movimientos en 1D":         "https://drive.google.com/uc?export=download&id=ID_DEL_ARCHIVO",
+    "↗️ Movimientos en 2D":         "https://drive.google.com/uc?export=download&id=ID_DEL_ARCHIVO",
+    "⚡ Trabajo Mecanico y Energia": "https://drive.google.com/uc?export=download&id=ID_DEL_ARCHIVO",
+    "⚡ Electrostatica":             "https://drive.google.com/uc?export=download&id=ID_DEL_ARCHIVO",
+    "🔌 Circuitos Electricos":      "https://drive.google.com/uc?export=download&id=ID_DEL_ARCHIVO",
+    "🧲 Magnetismo":                "https://drive.google.com/uc?export=download&id=ID_DEL_ARCHIVO",
+    "🔁 Induccion":                 "https://drive.google.com/uc?export=download&id=ID_DEL_ARCHIVO",
+    "⚛️ Fisica Moderna":            "https://drive.google.com/uc?export=download&id=ID_DEL_ARCHIVO",
+}
 
 # ── Teclados ──────────────────────────────────────────────────────────────────
 
@@ -98,59 +122,69 @@ ACCIONES = [
     "📚 Donde leo de este tema"
 ]
 
-# ── Prompts base por tema ─────────────────────────────────────────────────────
+# ── Descripcion por tema ──────────────────────────────────────────────────────
 
 PROMPTS_TEMA = {
-    "📐 Herramientas Matematicas": "álgebra, trigonometría y vectores aplicados a física",
-    "🍎 Leyes de Newton": "las tres Leyes de Newton y sus aplicaciones",
-    "🚀 Cinematica": "cinemática y ecuaciones de movimiento",
-    "➡️ Movimientos en 1D": "movimiento rectilíneo uniforme (MRU) y uniformemente acelerado (MRUA)",
-    "↗️ Movimientos en 2D": "tiro parabólico y movimiento circular",
-    "⚡ Trabajo Mecanico y Energia": "trabajo mecánico, energía cinética, potencial y conservación de energía",
-    "⚡ Electrostatica": "electrostática, carga eléctrica, Ley de Coulomb, campo y potencial eléctrico",
-    "🔌 Circuitos Electricos": "circuitos eléctricos, Ley de Ohm, circuitos serie/paralelo y leyes de Kirchhoff",
-    "🧲 Magnetismo": "campo magnético, fuerza de Lorentz y materiales magnéticos",
-    "🔁 Induccion": "inducción electromagnética, Ley de Faraday, Lenz, transformadores y generadores",
-    "⚛️ Fisica Moderna": "física moderna: relatividad, efecto fotoeléctrico, mecánica cuántica y física nuclear"
+    "📐 Herramientas Matematicas":  "algebra, trigonometria y vectores aplicados a fisica",
+    "🍎 Leyes de Newton":           "las tres Leyes de Newton y sus aplicaciones",
+    "🚀 Cinematica":                "cinematica y ecuaciones de movimiento",
+    "➡️ Movimientos en 1D":         "movimiento rectilineo uniforme (MRU) y uniformemente acelerado (MRUA)",
+    "↗️ Movimientos en 2D":         "tiro parabolico y movimiento circular",
+    "⚡ Trabajo Mecanico y Energia": "trabajo mecanico, energia cinetica, potencial y conservacion de energia",
+    "⚡ Electrostatica":             "electrostatica, carga electrica, Ley de Coulomb, campo y potencial electrico",
+    "🔌 Circuitos Electricos":      "circuitos electricos, Ley de Ohm, circuitos serie/paralelo y leyes de Kirchhoff",
+    "🧲 Magnetismo":                "campo magnetico, fuerza de Lorentz y materiales magneticos",
+    "🔁 Induccion":                 "induccion electromagnetica, Ley de Faraday, Lenz, transformadores y generadores",
+    "⚛️ Fisica Moderna":            "fisica moderna: relatividad, efecto fotoelectrico, mecanica cuantica y fisica nuclear"
 }
 
-# ── Prompts por acción ────────────────────────────────────────────────────────
+# ── Prompts ───────────────────────────────────────────────────────────────────
 
-def build_prompt(tema, accion, user_text=None):
-    descripcion = PROMPTS_TEMA.get(tema, "física general")
+def build_prompt(tema, accion, user_text=None, ejercicio_previo=None):
+    descripcion = PROMPTS_TEMA.get(tema, "fisica general")
 
     if accion == "❓ Hazme una pregunta":
         return (
-            f"Eres un profesor de física. El alumno quiere practicar sobre {descripcion}. "
-            f"Formulá UNA sola pregunta conceptual o de cálculo, clara y apropiada para estudiante universitario. "
-            f"No des la respuesta todavía. Solo la pregunta."
+            f"Eres un profesor de fisica. El alumno quiere practicar sobre {descripcion}. "
+            f"Formula UNA sola pregunta conceptual o de calculo, clara y apropiada para estudiante universitario. "
+            f"No des la respuesta todavia. Solo la pregunta."
         )
 
     elif accion == "📝 Evalua lo que sabes":
-        if user_text:
+        if user_text and ejercicio_previo:
+            # Correccion con contexto del ejercicio original
             return (
-                f"Eres un profesor de física evaluando a un alumno sobre {descripcion}. "
-                f"El alumno respondió lo siguiente: '{user_text}'. "
-                f"Evaluá su respuesta: indicá si es correcta, qué estuvo bien, qué mejorar y dá la respuesta completa. "
-                f"Sé constructivo y didáctico."
+                f"Eres un profesor de fisica corrigiendo un ejercicio sobre {descripcion}.\n\n"
+                f"El ejercicio que se le planteo al alumno fue:\n{ejercicio_previo}\n\n"
+                f"La respuesta del alumno fue:\n'{user_text}'\n\n"
+                f"Realizá la siguiente correccion detallada:\n"
+                f"1. Indică que estuvo CORRECTO en la respuesta.\n"
+                f"2. Identifica cada ERROR conceptual o de calculo cometido.\n"
+                f"3. Explica POR QUE es un error y cual es el concepto correcto.\n"
+                f"4. Mostrá la resolucion COMPLETA paso a paso.\n"
+                f"5. Da una calificacion del 1 al 10 con justificacion breve.\n"
+                f"Se didactico, claro y constructivo."
             )
         else:
+            # Generacion del ejercicio
             return (
-                f"Eres un profesor de física. Creá un ejercicio o pregunta de evaluación sobre {descripcion}. "
-                f"Puede ser de opción múltiple o de desarrollo. Indicá claramente qué debe responder el alumno."
+                f"Eres un profesor de fisica. Crea UN ejercicio de evaluacion sobre {descripcion}. "
+                f"Puede ser de calculo o conceptual, apropiado para nivel universitario. "
+                f"Al final del enunciado escribi exactamente esta linea: "
+                f"'Escribi tu resolucion completa para que pueda corregirla.'"
             )
 
     elif accion == "📚 Donde leo de este tema":
         return (
-            f"Eres un profesor de física. Recomendá recursos de estudio sobre {descripcion}. "
-            f"Incluí: libros de texto clásicos con autor y edición, sitios web confiables, "
-            f"canales de YouTube educativos y si hay cursos online gratuitos. "
-            f"Organizá la respuesta por tipo de recurso."
+            f"Eres un profesor de fisica. Recomienda recursos de estudio sobre {descripcion}. "
+            f"Incluye: libros de texto clasicos con autor y edicion, sitios web confiables, "
+            f"canales de YouTube educativos y cursos online gratuitos si los hay. "
+            f"Organiza la respuesta por tipo de recurso."
         )
 
     else:
         return (
-            f"Eres un profesor de física. Responde en español sobre {descripcion}. "
+            f"Eres un profesor de fisica. Responde en espanol sobre {descripcion}. "
             f"Pregunta: {user_text}"
         )
 
@@ -170,6 +204,19 @@ def get_keyboard_temas(chat_id):
     elif grupo == "⚙️ Ingenieria":
         return keyboard_temas_ingenieria()
     return keyboard_grupos()
+
+def gemini_generate(prompt):
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=f"Responde siempre en espanol.\n{prompt}"
+    )
+    return response.candidates[0].content.parts[0].text
+
+def typing(chat_id):
+    requests.post(
+        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendChatAction",
+        json={"chat_id": chat_id, "action": "typing"}
+    )
 
 # ── Rutas ─────────────────────────────────────────────────────────────────────
 
@@ -198,137 +245,129 @@ def webhook():
             user_state[chat_id] = {}
             send_message(
                 chat_id,
-                "👋 ¡Hola! Soy tu profe virtual.\nSeleccioná tu grupo para comenzar:",
+                "Hola! Soy tu profe virtual.\nSelecciona tu grupo para comenzar:",
                 reply_markup=keyboard_grupos()
             )
 
         # ── Volver a grupos ──
         elif user_text == "🔙 Volver a grupos":
             user_state[chat_id] = {}
-            send_message(chat_id, "↩️ Seleccioná tu grupo:", reply_markup=keyboard_grupos())
+            send_message(chat_id, "Selecciona tu grupo:", reply_markup=keyboard_grupos())
 
         # ── Volver a temas ──
         elif user_text == "🔙 Volver a temas":
-            user_state[chat_id].pop("accion", None)
-            user_state[chat_id].pop("tema", None)
-            tema_keyboard = get_keyboard_temas(chat_id)
-            send_message(chat_id, "↩️ Seleccioná un tema:", reply_markup=tema_keyboard)
+            user_state[chat_id] = {
+                "grupo": state.get("grupo", "")
+            }
+            send_message(chat_id, "Selecciona un tema:", reply_markup=get_keyboard_temas(chat_id))
 
-        # ── Selección de grupo ──
+        # ── Seleccion de grupo ──
         elif user_text in GRUPOS:
             user_state[chat_id] = {"grupo": user_text}
             if user_text in GRUPOS_CIENTIFICO:
                 send_message(
                     chat_id,
-                    f"✅ Grupo *{user_text}* seleccionado.\nElegí un tema:",
+                    f"Grupo {user_text} seleccionado.\nElige un tema:",
                     reply_markup=keyboard_temas_cientifico()
                 )
             else:
                 send_message(
                     chat_id,
-                    f"✅ Grupo *{user_text}* seleccionado.\nElegí un tema:",
+                    f"Grupo {user_text} seleccionado.\nElige un tema:",
                     reply_markup=keyboard_temas_ingenieria()
                 )
 
-        # ── Selección de tema ──
+        # ── Seleccion de tema ──
         elif user_text in TODOS_LOS_TEMAS:
-            user_state[chat_id]["tema"] = user_text
-            user_state[chat_id].pop("accion", None)
+            user_state[chat_id] = {
+                "grupo": state.get("grupo", ""),
+                "tema": user_text
+            }
             send_message(
                 chat_id,
-                f"📖 Tema: *{user_text}*\n\n¿Qué querés hacer?",
+                f"Tema: {user_text}\n\nQue queres hacer?",
                 reply_markup=keyboard_acciones()
             )
 
-        # ── Selección de acción ──
+        # ── Seleccion de accion ──
         elif user_text in ACCIONES:
             tema = state.get("tema", "")
             if not tema:
-                send_message(chat_id, "⚠️ Primero elegí un tema.", reply_markup=get_keyboard_temas(chat_id))
+                send_message(chat_id, "Primero elige un tema.", reply_markup=get_keyboard_temas(chat_id))
                 return "ok", 200
 
             user_state[chat_id]["accion"] = user_text
 
-            # "Donde leo" y "Hazme una pregunta" se resuelven de inmediato
             if user_text in ["📚 Donde leo de este tema", "❓ Hazme una pregunta"]:
                 try:
-                    requests.post(
-                        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendChatAction",
-                        json={"chat_id": chat_id, "action": "typing"}
-                    )
-                    prompt = build_prompt(tema, user_text)
-                    response = client.models.generate_content(
-                        model="gemini-2.5-flash",
-                        contents=f"Responde siempre en español.\n{prompt}"
-                    )
-                    bot_response = response.candidates[0].content.parts[0].text
+                    typing(chat_id)
+                    bot_response = gemini_generate(build_prompt(tema, user_text))
                     send_message(chat_id, bot_response, reply_markup=keyboard_acciones())
                 except Exception as e:
                     print(f"ERROR GEMINI: {e}")
-                    send_message(chat_id, f"⚠️ Error: {e}")
+                    send_message(chat_id, f"Error: {e}")
 
-            # "Evalua lo que sabes" genera primero el ejercicio
             elif user_text == "📝 Evalua lo que sabes":
                 try:
-                    requests.post(
-                        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendChatAction",
-                        json={"chat_id": chat_id, "action": "typing"}
-                    )
-                    prompt = build_prompt(tema, user_text)
-                    response = client.models.generate_content(
-                        model="gemini-2.5-flash",
-                        contents=f"Responde siempre en español.\n{prompt}"
-                    )
-                    ejercicio = response.candidates[0].content.parts[0].text
+                    # Enviar repartido si existe
+                    link_repartido = REPARTIDOS.get(tema)
+                    if link_repartido and "ID_DEL_ARCHIVO" not in link_repartido:
+                        send_message(
+                            chat_id,
+                            f"Antes de empezar, aca tenes el repartido de ejercicios:\n{link_repartido}",
+                            reply_markup=keyboard_acciones()
+                        )
+
+                    typing(chat_id)
+                    # Generar ejercicio y guardarlo en el estado
+                    ejercicio = gemini_generate(build_prompt(tema, user_text))
                     user_state[chat_id]["esperando_respuesta"] = True
+                    user_state[chat_id]["ejercicio_actual"] = ejercicio  # <-- se guarda el ejercicio
+
                     send_message(
                         chat_id,
-                        f"{ejercicio}\n\n✏️ _Escribí tu respuesta y la evaluaré._",
+                        f"{ejercicio}\n\n_Escribi tu resolucion completa para que pueda corregirla._",
                         reply_markup=keyboard_acciones()
                     )
                 except Exception as e:
                     print(f"ERROR GEMINI: {e}")
-                    send_message(chat_id, f"⚠️ Error: {e}")
+                    send_message(chat_id, f"Error: {e}")
 
-        # ── Respuesta del alumno a la evaluación ──
+        # ── Respuesta del alumno → correccion con contexto ──
         elif state.get("esperando_respuesta") and user_text:
             tema = state.get("tema", "")
+            ejercicio_previo = state.get("ejercicio_actual", "")  # <-- se recupera el ejercicio
             try:
-                requests.post(
-                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendChatAction",
-                    json={"chat_id": chat_id, "action": "typing"}
+                typing(chat_id)
+                # Se pasa el ejercicio original junto con la respuesta del alumno
+                prompt = build_prompt(
+                    tema,
+                    "📝 Evalua lo que sabes",
+                    user_text=user_text,
+                    ejercicio_previo=ejercicio_previo
                 )
-                prompt = build_prompt(tema, "📝 Evalua lo que sabes", user_text)
-                response = client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=f"Responde siempre en español.\n{prompt}"
-                )
-                evaluacion = response.candidates[0].content.parts[0].text
+                evaluacion = gemini_generate(prompt)
+                # Limpiar estado de evaluacion pero mantener tema y grupo
                 user_state[chat_id]["esperando_respuesta"] = False
+                user_state[chat_id]["ejercicio_actual"] = ""
                 send_message(chat_id, evaluacion, reply_markup=keyboard_acciones())
             except Exception as e:
                 print(f"ERROR GEMINI: {e}")
-                send_message(chat_id, f"⚠️ Error: {e}")
+                send_message(chat_id, f"Error: {e}")
 
         # ── Consulta libre ──
         elif user_text:
             tema = state.get("tema", "")
             accion = state.get("accion", "")
             try:
-                requests.post(
-                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendChatAction",
-                    json={"chat_id": chat_id, "action": "typing"}
-                )
+                typing(chat_id)
                 prompt = build_prompt(tema, accion, user_text)
-                response = client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=f"Responde siempre en español.\n{prompt}"
-                )
-                bot_response = response.candidates[0].content.parts[0].text
-                send_message(chat_id, bot_response, reply_markup=keyboard_acciones() if tema else get_keyboard_temas(chat_id))
+                bot_response = gemini_generate(prompt)
+                markup = keyboard_acciones() if tema else get_keyboard_temas(chat_id)
+                send_message(chat_id, bot_response, reply_markup=markup)
             except Exception as e:
                 print(f"ERROR GEMINI: {e}")
-                send_message(chat_id, f"⚠️ Error: {e}")
+                send_message(chat_id, f"Error: {e}")
 
     return "ok", 200
 
@@ -339,4 +378,24 @@ def index():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+```
 
+---
+
+**Lo que cambia con la memoria del ejercicio:**
+
+La clave es que ahora `ejercicio_actual` se guarda en `user_state` y se recupera al momento de corregir, así Gemini sabe exactamente qué ejercicio estaba resolviendo el alumno:
+```
+Gemini genera ejercicio
+        |
+        v
+Se guarda en user_state["ejercicio_actual"]
+        |
+        v
+Alumno escribe su respuesta
+        |
+        v
+Se pasa a Gemini: ejercicio original + respuesta del alumno
+        |
+        v
+Gemini corrige con contexto completo
