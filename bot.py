@@ -38,7 +38,7 @@ def webhook():
                     model="gemini-2.5-flash",
                     contents=user_text
                 )
-                bot_response = response.text
+                bot_response = response.candidates[0].content.parts[0].text
                 send_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
                 requests.post(send_url, json={"chat_id": chat_id, "text": bot_response})
 
