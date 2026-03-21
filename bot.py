@@ -82,8 +82,8 @@ def keyboard_temas_ingenieria():
 def keyboard_acciones():
     return {
         "keyboard": [
-            [{"text": "❓ Hazme una pregunta"}],
-            [{"text": "📝 Evalua lo que sabes"}],
+            [{"text": "❓ Ponme un ejercicio"}],
+            [{"text": "📝 Preguntale al profesor"}],
             [{"text": "📚 Donde leo de este tema"}],
             [{"text": "🔙 Volver a temas"}]
         ],
