@@ -33,21 +33,24 @@ def webhook():
             requests.post(send_url, json={"chat_id": chat_id, "text": "Hola! Soy tu profe virtual. Tienes dudas ?."})
 
         elif user_text:
-            try:
-                response = client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=f"Responde siempre en español. Pregunta del usuario: {user_text}"
-                )
-                bot_response = response.candidates[0].content.parts[0].text
-                send_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-                requests.post(send_url, json={"chat_id": chat_id, "text": bot_response})
+    try:
+        # Avisá que está procesando
+        send_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendChatAction"
+        requests.post(send_url, json={"chat_id": chat_id, "action": "typing"})
 
-            except Exception as e:
-                # Muestra el error en logs Y te lo manda por Telegram
-                print(f"ERROR GEMINI: {e}")
-                send_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-                requests.post(send_url, json={"chat_id": chat_id, "text": f"Error: {e}"})
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-001",
+            contents=f"Responde siempre en español. Pregunta del usuario: {user_text}"
+        )
+        bot_response = response.candidates[0].content.parts[0].text
 
+        send_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        requests.post(send_url, json={"chat_id": chat_id, "text": bot_response})
+
+    except Exception as e:
+        print(f"ERROR GEMINI: {e}")
+        send_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        requests.post(send_url, json={"chat_id": chat_id, "text": f"Error: {e}"})
     return "ok", 200
 
 @app.route('/')
