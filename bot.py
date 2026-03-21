@@ -339,19 +339,4 @@ def index():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-```
 
----
-
-**Flujo completo actualizado:**
-```
-/start
-  └── Elegir grupo
-        ├── Científico A / B
-        │     └── Elegir tema
-        │           └── ❓ Hazme una pregunta   → Gemini genera una pregunta
-        │               📝 Evalua lo que sabes  → Gemini da ejercicio → alumno responde → Gemini evalúa
-        │               📚 Donde leo de este tema → Gemini recomienda recursos
-        │               🔙 Volver a temas
-        └── Ingeniería
-              └── (mismo flujo con sus 6 temas)
