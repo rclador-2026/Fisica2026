@@ -378,24 +378,3 @@ def index():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-```
-
----
-
-**Lo que cambia con la memoria del ejercicio:**
-
-La clave es que ahora `ejercicio_actual` se guarda en `user_state` y se recupera al momento de corregir, así Gemini sabe exactamente qué ejercicio estaba resolviendo el alumno:
-```
-Gemini genera ejercicio
-        |
-        v
-Se guarda en user_state["ejercicio_actual"]
-        |
-        v
-Alumno escribe su respuesta
-        |
-        v
-Se pasa a Gemini: ejercicio original + respuesta del alumno
-        |
-        v
-Gemini corrige con contexto completo
