@@ -36,7 +36,7 @@ def webhook():
             try:
                 response = client.models.generate_content(
                     model="gemini-2.5-flash",
-                    contents=user_text
+                    contents=f"Responde siempre en español. Pregunta del usuario: {user_text}"
                 )
                 bot_response = response.candidates[0].content.parts[0].text
                 send_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
