@@ -50,3 +50,15 @@ def webhook():
 
             except Exception as e:
                 print(f"ERROR GEMINI: {e}")
+                send_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+                requests.post(send_url, json={"chat_id": chat_id, "text": f"Error: {e}"})
+
+    return "ok", 200
+
+@app.route('/')
+def index():
+    return "Bot activo", 200
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
