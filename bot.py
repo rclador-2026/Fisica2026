@@ -40,7 +40,7 @@ def webhook():
                 requests.post(send_url, json={"chat_id": chat_id, "action": "typing"})
 
                 response = client.models.generate_content(
-                    model="gemini-2.0-flash-001",
+                    model="gemini-2.5-flash",
                     contents=f"Responde siempre en español. Pregunta del usuario: {user_text}"
                 )
                 bot_response = response.candidates[0].content.parts[0].text
