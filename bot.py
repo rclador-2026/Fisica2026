@@ -207,7 +207,7 @@ def get_keyboard_temas(chat_id):
 
 def gemini_generate(prompt):
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-2.0-flash",
         contents=f"Responde siempre en espanol.\n{prompt}"
     )
     return response.candidates[0].content.parts[0].text
