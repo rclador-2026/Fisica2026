@@ -1,5 +1,4 @@
-pyTelegramBotAPI
 flask
-gunicorn
 requests
-airtable-python-wrapper
+google-genai
+gunicorn
