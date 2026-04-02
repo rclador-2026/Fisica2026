@@ -81,7 +81,7 @@ def guardar_en_sheets(alumno, tema, tipo, consulta):
 def gemini_generate(prompt):
     try:
         response = client.models.generate_content(
-            model="gemini-2.0-flash", 
+            model="gemini-2.5-flash", 
             contents=f"Eres un profesor de física uruguayo. Responde DIRECTO, sin saludos. Máximo 2 párrafos. {prompt}"
         )
         return response.candidates[0].content.parts[0].text
