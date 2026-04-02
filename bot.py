@@ -35,6 +35,7 @@ def gemini_generate(prompt, grupo="General"):
     try:
         instrucciones = (
             f"Actúa como un profesor de física de bachillerato en Uruguay para el grupo de {grupo}. "
+            "Usa una notación matemática simple y evita el formato LaTeX complejo si es posible."
             "Tu tono debe ser formal, técnico y extremadamente breve. Ve directo al grano. "
             "No saludes, no uses muletillas, responde la duda técnica de inmediato."
         )
