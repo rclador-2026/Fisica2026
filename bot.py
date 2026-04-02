@@ -47,7 +47,7 @@ def guardar_en_sheets(alumno_id, grupo, tema, tipo, texto_consulta):
         "grupo": grupo,
         "tema": tema,
         "tipo": tipo,
-        "consulta": texto_puro # <--- Nombre clave
+        "consulta": texto_consulta # <--- Nombre clave
     }
     try:
         requests.post(URL_SHEETS, json=payload, timeout=5)
