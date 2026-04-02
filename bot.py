@@ -20,9 +20,13 @@ TODOS_LOS_TEMAS = list(set(TEMAS_CIENTIFICO + TEMAS_INGENIERIA))
 
 def verificar_registro(chat_id):
     try:
-        r = requests.get(f"{URL_SHEETS}?id={chat_id}", timeout=5)
-        return r.json() 
+        # Reducimos el timeout para que no se quede colgado si Google tarda
+        r = requests.get(f"{URL_SHEETS}?id={chat_id}", timeout=3)
+        if r.status_code == 200:
+            return r.json()
+        return {"existe": False}
     except:
+        # Si falla la conexión, asumimos False para no trancar al alumno
         return {"existe": False}
 
 def gemini_generate(prompt, grupo="General"):
