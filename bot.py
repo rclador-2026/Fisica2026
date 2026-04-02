@@ -71,6 +71,69 @@ def webhook():
 
     chat_id = data["message"]["chat"]["id"]
     user_text = data["message"].get("text", "")
+    
+    # Aseguramos que el estado exista para este chat_id
+    if chat_id not in user_state:
+        user_state[chat_id] = {}
+    
+    state = user_state[chat_id]
+
+    # 1. COMANDO INICIAL: Forzamos la aparición de grupos
+    if user_text == "/start" or user_text == "🔙 Volver a grupos":
+        user_state[chat_id] = {} # Limpiamos todo el estado
+        send_message(chat_id, "¡Hola! Soy tu asistente de Física. Selecciona tu grupo para comenzar:", 
+                     reply_markup=keyboard_grupos())
+        return "ok", 200
+
+    # 2. SELECCIÓN DE GRUPO
+    if user_text == "⚙️ Ingenieria" or user_text in GRUPOS_CIENTIFICO:
+        user_state[chat_id]["grupo"] = user_text
+        send_message(chat_id, f"Has seleccionado: {user_text}. Ahora elige un tema:", 
+                     reply_markup=get_keyboard_temas(chat_id))
+        return "ok", 200
+
+    # 3. VOLVER A TEMAS
+    if user_text == OP_VOLVER:
+        send_message(chat_id, "Elige un tema:", reply_markup=get_keyboard_temas(chat_id))
+        return "ok", 200
+
+    # 4. SELECCIÓN DE TEMAS
+    if user_text in TODOS_LOS_TEMAS:
+        user_state[chat_id]["tema"] = user_text
+        send_message(chat_id, f"Tema: {user_text}. ¿Qué quieres hacer?", 
+                     reply_markup=keyboard_acciones())
+        return "ok", 200
+
+    # 5. ACCIONES DE BOTONES (IA)
+    if user_text in ACCIONES:
+        tema = state.get("tema")
+        if not tema:
+            send_message(chat_id, "Primero elige un tema de la lista.", 
+                         reply_markup=get_keyboard_temas(chat_id))
+            return "ok", 200
+        
+        if user_text == OP_PREGUNTA:
+            user_state[chat_id]["ultima_accion"] = OP_PREGUNTA
+            send_message(chat_id, "Dime tu duda técnica sobre este tema y te responderé brevemente:")
+        else:
+            typing(chat_id)
+            res = gemini_generate(build_prompt(tema, user_text))
+            # Aquí guardaríamos en Google Sheets si ya tienes la función
+            send_message(chat_id, res, reply_markup=keyboard_acciones())
+        return "ok", 200
+
+    # 6. PROCESAR PREGUNTA LIBRE
+    if state.get("ultima_accion") == OP_PREGUNTA:
+        tema = state.get("tema")
+        typing(chat_id)
+        res = gemini_generate(build_prompt(tema, OP_PREGUNTA, user_text))
+        user_state[chat_id]["ultima_accion"] = None 
+        send_message(chat_id, res, reply_markup=keyboard_acciones())
+        return "ok", 200
+
+    
+    chat_id = data["message"]["chat"]["id"]
+    user_text = data["message"].get("text", "")
     state = user_state.get(chat_id, {})
 
     # Lógica de Navegación
