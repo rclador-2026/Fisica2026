@@ -10,7 +10,7 @@ app = Flask(__name__)
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 client = genai.Client(api_key=GEMINI_API_KEY)
-URL_SHEETS = "TU_NUEVA_URL_AQUI" # <--- PEGA LA URL NUEVA AQUÍ
+URL_SHEETS = "https://script.google.com/macros/s/AKfycbyVL89rtoJLTxBJSnj24zuUrPUqv9dIa8gfRQ8AuG36m7df_MZnEyRCkssMNQ8HOpwU/exec" # <--- PEGA LA URL NUEVA AQUÍ
 
 # --- Listas ---
 GRUPOS = ["🔬 Cientifico A", "🔬 Cientifico B", "⚙️ Ingenieria"]
