@@ -108,30 +108,30 @@ def webhook():
                      })
         return "ok", 200
 
-    # 4. PROCESAR RESPUESTA TÉCNICA
+   # 4. RESPUESTA TÉCNICA
     if user_text not in GRUPOS:
+        # Si el usuario solo tocó el botón pero no escribió su duda aún:
+        if any(user_text == f"{prefix} de {tema}" for prefix in ["❓ Ejercicio", "📚 Lectura"] for tema in TODOS_LOS_TEMAS) or \
+           any(user_text == f"📝 Duda sobre {tema}" for tema in TODOS_LOS_TEMAS):
+            
+            accion = "ejercicio" if "❓" in user_text else "lectura" if "📚" in user_text else "duda"
+            send_message(chat_id, f"Perfecto. Escribí ahora tu {accion} específica sobre este tema y te respondo.")
+            return "ok", 200
+
+        # Si ya escribió algo más que el texto del botón, procesamos con Gemini
         typing(chat_id)
         
-        # Determinar el tipo de interacción para el Excel
+        # Identificar contexto para Sheets
         tipo = "Duda General"
-        tema_contexto = "Física"
-        
-        if "❓ Ejercicio" in user_text:
-            tipo = "Ejercicio"
-            tema_contexto = user_text.replace("❓ Ejercicio de ", "")
-        elif "📝 Duda" in user_text:
-            tipo = "Duda Específica"
-            tema_contexto = user_text.replace("📝 Duda sobre ", "")
-        elif "📚 Lectura" in user_text:
-            tipo = "Lectura"
-            tema_contexto = user_text.replace("📚 Lectura de ", "")
+        if "❓" in user_text: tipo = "Ejercicio"
+        elif "📝" in user_text: tipo = "Duda Específica"
+        elif "📚" in user_text: tipo = "Lectura"
 
-        # Generar respuesta con IA
-        respuesta_ia = gemini_generate(user_text, grupo_alumno)
-        send_message(chat_id, respuesta_ia)
+        res = gemini_generate(user_text, grupo_alumno)
+        send_message(chat_id, res)
         
-        # Guardar en Google Sheets de forma asíncrona
-        guardar_en_sheets(chat_id, grupo_alumno, tema_contexto, tipo, user_text)
+        # Guardar en Google Sheets
+        guardar_en_sheets(chat_id, grupo_alumno, "Física", tipo, user_text)
 
     return "ok", 200
 
