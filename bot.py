@@ -12,7 +12,7 @@ GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 # URL de tu Google Apps Script (Debe terminar en /exec)
-URL_SHEETS = "https://script.google.com/macros/s/AKfycbxPbjoQY1AptTcYPzRX2i14a6hFQWe3A5JOB_3sozDhox4ae80OHvg26d5sATEc-q3F/exec"
+URL_SHEETS = "https://script.google.com/macros/s/AKfycbyTG4V1BcupwWsZ92G8G4QHKtj00jxbVbTDQLacBzexT2AenRii1nPeSG-oIo5S4UYP/exec"
 
 # ── Listas de Datos ───────────────────────────────────────────────────────────
 GRUPOS = ["🔬 Cientifico A", "🔬 Cientifico B", "⚙️ Ingenieria"]
