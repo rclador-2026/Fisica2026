@@ -132,4 +132,11 @@ def typing(chat_id):
                   json={"chat_id": chat_id, "action": "typing"})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+def typing(chat_id):
+    requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendChatAction", 
+                  json={"chat_id": chat_id, "action": "typing"})
+
+if __name__ == "__main__":
+    # Esta es la línea que estaba incompleta
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
