@@ -69,7 +69,7 @@ def keyboard_acciones():
 
 def guardar_en_sheets(alumno, tema, tipo, consulta):
     # REEMPLAZA ESTO con tu URL de Google Apps Script (termina en /exec)
-    URL_SHEETS = "https://script.google.com/macros/s/TU_ID_AQUI/exec"
+    URL_SHEETS = "https://script.google.com/macros/s/AKfycbxsNPbeJH4OoFb78cwtRERAfiJ64yeRpd4WpR2ceqX1kEjtuQT8sc0Ynu3BFcuAbnaN/exec"
     payload = {"alumno": str(alumno), "tema": tema, "tipo": tipo, "consulta": consulta}
     try:
         requests.post(URL_SHEETS, json=payload, timeout=5)
