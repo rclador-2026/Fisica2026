@@ -68,7 +68,7 @@ def keyboard_acciones():
 # ── Registro en Google Sheets ─────────────────────────────────────────────────
 
 def guardar_en_sheets(alumno, tema, tipo, consulta):
-    # REEMPLAZA ESTO con tu URL de Google Apps Script
+    # REEMPLAZA ESTO con tu URL de Google Apps Script (termina en /exec)
     URL_SHEETS = "https://script.google.com/macros/s/TU_ID_AQUI/exec"
     payload = {"alumno": str(alumno), "tema": tema, "tipo": tipo, "consulta": consulta}
     try:
@@ -76,7 +76,7 @@ def guardar_en_sheets(alumno, tema, tipo, consulta):
     except:
         pass
 
-# ── Lógica de IA (Gemini 1.5 Flash - Más Estable) ─────────────────────────────
+# ── Lógica de IA (Gemini 1.5 Flash - Estable) ─────────────────────────────────
 
 def gemini_generate(prompt):
     try:
@@ -116,4 +116,65 @@ def typing(chat_id):
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.get_json()
-    if not data or "
+    if not data or "message" not in data:
+        return "ok", 200
+
+    chat_id = data["message"]["chat"]["id"]
+    user_text = data["message"].get("text", "")
+    
+    if chat_id not in user_state:
+        user_state[chat_id] = {}
+
+    # 1. COMANDOS DE INICIO
+    if user_text == "/start" or user_text == "🔙 Volver a grupos":
+        user_state[chat_id] = {}
+        send_message(chat_id, "¡Hola! Selecciona tu grupo:", reply_markup=keyboard_grupos())
+        return "ok", 200
+
+    # 2. SELECCIÓN DE GRUPO
+    if user_text in GRUPOS_CIENTIFICO or user_text in GRUPOS_INGENIERIA:
+        user_state[chat_id]["grupo"] = user_text
+        send_message(chat_id, f"Grupo {user_text}. Elige un tema:", reply_markup=get_keyboard_temas(chat_id))
+        return "ok", 200
+
+    # 3. VOLVER A TEMAS
+    if user_text == OP_VOLVER:
+        send_message(chat_id, "Elige un tema de la lista:", reply_markup=get_keyboard_temas(chat_id))
+        return "ok", 200
+
+    # 4. SELECCIÓN DE TEMAS
+    if user_text in TODOS_LOS_TEMAS:
+        user_state[chat_id]["tema"] = user_text 
+        send_message(chat_id, f"Has elegido {user_text}. ¿Qué quieres hacer?", reply_markup=keyboard_acciones())
+        return "ok", 200
+
+    # 5. ACCIONES DE BOTÓN
+    if user_text in ACCIONES:
+        tema = user_state[chat_id].get("tema")
+        if not tema:
+            send_message(chat_id, "Primero selecciona un tema.", reply_markup=get_keyboard_temas(chat_id))
+            return "ok", 200
+        
+        if user_text == OP_PREGUNTA:
+            user_state[chat_id]["ultima_accion"] = OP_PREGUNTA
+            send_message(chat_id, "Dime tu duda técnica:")
+        else:
+            typing(chat_id)
+            res = gemini_generate(build_prompt(tema, user_text))
+            send_message(chat_id, res, reply_markup=keyboard_acciones())
+        return "ok", 200
+
+    # 6. PROCESAR PREGUNTA LIBRE
+    if user_state[chat_id].get("ultima_accion") == OP_PREGUNTA:
+        tema = user_state[chat_id].get("tema")
+        typing(chat_id)
+        res = gemini_generate(build_prompt(tema, OP_PREGUNTA, user_text))
+        guardar_en_sheets(chat_id, tema, "Duda Alumno", user_text)
+        user_state[chat_id]["ultima_accion"] = None 
+        send_message(chat_id, res, reply_markup=keyboard_acciones())
+        return "ok", 200
+
+    return "ok", 200
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
