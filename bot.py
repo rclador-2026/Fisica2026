@@ -25,6 +25,15 @@ def verificar_registro(chat_id):
 
 def gemini_generate(prompt):
     try:
+        # Instrucciones mucho más estrictas para el tono del profesor
+        instrucciones = (
+            "Actúa como un profesor de física de bachillerato en Uruguay. "
+            "Tu tono debe ser formal, académico, serio y extremadamente conciso. "
+            "No uses lenguaje coloquial excesivo (evita 'pila', 'vueltas', 'nomás'). "
+            "No saludes en cada respuesta ni te presentes si ya estás en una conversación. "
+            "Si te piden una fórmula o definición, dalo de inmediato con su unidad en el SI. "
+            "Usa lenguaje técnico correcto. Responde directo al punto."
+        )
         response = client.models.generate_content(
             model="gemini-2.5-flash", 
             contents=f"Eres un profesor de física uruguayo. Responde directo y breve. {prompt}"
