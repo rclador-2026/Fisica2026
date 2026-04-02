@@ -5,19 +5,59 @@ import requests
 import json
 
 app = Flask(__name__)
+
+# ── Configuración de Variables de Entorno ─────────────────────────────────────
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 client = genai.Client(api_key=GEMINI_API_KEY)
 
+# ── Estado en memoria ─────────────────────────────────────────────────────────
 user_state = {}
 
-# ── Configuración de Botones (Sincronizados) ──────────────────────────────────
+# ── Listas de Datos ───────────────────────────────────────────────────────────
+GRUPOS_CIENTIFICO = ["🔬 Cientifico A", "🔬 Cientifico B"]
+GRUPOS_INGENIERIA = ["⚙️ Ingenieria"]
+
+TEMAS_CIENTIFICO = [
+    "📐 Herramientas Matematicas", "🍎 Leyes de Newton", "🚀 Cinematica", 
+    "➡️ Movimientos en 1D", "↗️ Movimientos en 2D", "⚡ Trabajo Mecanico y Energia"
+]
+
+TEMAS_INGENIERIA = [
+    "📐 Herramientas Matematicas", "⚡ Electrostatica", "🔌 Circuitos Electricos", 
+    "🧲 Magnetismo", "🔁 Induccion", "⚛️ Fisica Moderna"
+]
+
+TODOS_LOS_TEMAS = set(TEMAS_CIENTIFICO + TEMAS_INGENIERIA)
+
+# ── Botones de Acción ─────────────────────────────────────────────────────────
 OP_EJERCICIO = "❓ Ponme un ejercicio"
 OP_PREGUNTA = "📝 Preguntale al profesor"
 OP_LECTURA = "📚 Donde leo de este tema"
 OP_VOLVER = "🔙 Volver a temas"
 
 ACCIONES = [OP_EJERCICIO, OP_PREGUNTA, OP_LECTURA]
+
+# ── Funciones de Teclados ─────────────────────────────────────────────────────
+
+def keyboard_grupos():
+    return {
+        "keyboard": [
+            [{"text": "🔬 Cientifico A"}],
+            [{"text": "🔬 Cientifico B"}],
+            [{"text": "⚙️ Ingenieria"}]
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False
+    }
+
+def get_keyboard_temas(chat_id):
+    grupo = user_state.get(chat_id, {}).get("grupo", "")
+    temas = TEMAS_CIENTIFICO if grupo in GRUPOS_CIENTIFICO else TEMAS_INGENIERIA
+    return {
+        "keyboard": [[{"text": t}] for t in temas] + [[{"text": "🔙 Volver a grupos"}]],
+        "resize_keyboard": True
+    }
 
 def keyboard_acciones():
     return {
@@ -30,31 +70,29 @@ def keyboard_acciones():
         "resize_keyboard": True
     }
 
-# (Mantén tus funciones de keyboard_grupos y temas igual que antes...)
-
-# ── Generación de IA Optimizada ───────────────────────────────────────────────
+# ── Lógica de IA (Gemini) ─────────────────────────────────────────────────────
 
 def gemini_generate(prompt):
-    # Usamos 1.5-flash-002 o 2.0-flash para máxima velocidad
-    response = client.models.generate_content(
-        model="gemini-2.0-flash", 
-        contents=f"Eres un profesor de física uruguayo. Responde DIRECTO, sin introducciones largas. {prompt}"
-    )
-    return response.candidates[0].content.parts[0].text
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.0-flash", 
+            contents=f"Eres un profesor de física uruguayo. Responde DIRECTO, sin saludos ni introducciones. Máximo 2 párrafos. {prompt}"
+        )
+        return response.candidates[0].content.parts[0].text
+    except Exception as e:
+        print(f"Error en Gemini: {e}")
+        return "Lo siento, tuve un problema al pensar la respuesta. Intenta de nuevo."
 
 def build_prompt(tema, accion, user_text=None):
     if accion == OP_EJERCICIO:
-        return f"Crea UN ejercicio técnico de {tema} para nivel bachillerato. Ve directo al enunciado."
-    
+        return f"Crea un ejercicio de nivel bachillerato sobre {tema}. Solo el enunciado."
     elif accion == OP_LECTURA:
-        return f"Recomienda 3 fuentes bibliográficas o links rápidos para estudiar {tema}."
-    
+        return f"Dime 3 libros o sitios web específicos para estudiar {tema}."
     elif accion == OP_PREGUNTA:
-        return f"Responde de forma técnica y breve (máximo 2 párrafos) sobre {tema}. Pregunta: {user_text}"
-    
-    return f"Explica brevemente: {user_text}"
+        return f"Explica brevemente esto sobre {tema}: {user_text}"
+    return f"Respuesta corta sobre {user_text}"
 
-# ── Lógica del Webhook ────────────────────────────────────────────────────────
+# ── Helpers de Telegram ───────────────────────────────────────────────────────
 
 def send_message(chat_id, text, reply_markup=None):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -62,6 +100,12 @@ def send_message(chat_id, text, reply_markup=None):
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
     requests.post(url, json=payload)
+
+def typing(chat_id):
+    requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendChatAction", 
+                  json={"chat_id": chat_id, "action": "typing"})
+
+# ── Webhook Principal ─────────────────────────────────────────────────────────
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -72,108 +116,62 @@ def webhook():
     chat_id = data["message"]["chat"]["id"]
     user_text = data["message"].get("text", "")
     
-    # Aseguramos que el estado exista para este chat_id
     if chat_id not in user_state:
         user_state[chat_id] = {}
-    
-    state = user_state[chat_id]
 
-    # 1. COMANDO INICIAL: Forzamos la aparición de grupos
+    # 1. COMANDO INICIAL / RESET
     if user_text == "/start" or user_text == "🔙 Volver a grupos":
-        user_state[chat_id] = {} # Limpiamos todo el estado
-        send_message(chat_id, "¡Hola! Soy tu asistente de Física. Selecciona tu grupo para comenzar:", 
-                     reply_markup=keyboard_grupos())
+        user_state[chat_id] = {}
+        send_message(chat_id, "¡Hola! Selecciona tu grupo para comenzar:", reply_markup=keyboard_grupos())
         return "ok", 200
 
     # 2. SELECCIÓN DE GRUPO
-    if user_text == "⚙️ Ingenieria" or user_text in GRUPOS_CIENTIFICO:
+    if user_text in GRUPOS_CIENTIFICO or user_text in GRUPOS_INGENIERIA:
         user_state[chat_id]["grupo"] = user_text
-        send_message(chat_id, f"Has seleccionado: {user_text}. Ahora elige un tema:", 
-                     reply_markup=get_keyboard_temas(chat_id))
+        send_message(chat_id, f"Has elegido {user_text}. Elige un tema:", reply_markup=get_keyboard_temas(chat_id))
         return "ok", 200
 
     # 3. VOLVER A TEMAS
     if user_text == OP_VOLVER:
-        send_message(chat_id, "Elige un tema:", reply_markup=get_keyboard_temas(chat_id))
+        send_message(chat_id, "Elige un tema de la lista:", reply_markup=get_keyboard_temas(chat_id))
         return "ok", 200
 
     # 4. SELECCIÓN DE TEMAS
     if user_text in TODOS_LOS_TEMAS:
         user_state[chat_id]["tema"] = user_text
-        send_message(chat_id, f"Tema: {user_text}. ¿Qué quieres hacer?", 
-                     reply_markup=keyboard_acciones())
+        send_message(chat_id, f"Tema: {user_text}. ¿Qué quieres hacer?", reply_markup=keyboard_acciones())
         return "ok", 200
 
-    # 5. ACCIONES DE BOTONES (IA)
+    # 5. ACCIONES (EJERCICIO, LECTURA, PREGUNTA)
     if user_text in ACCIONES:
-        tema = state.get("tema")
+        tema = user_state[chat_id].get("tema")
         if not tema:
-            send_message(chat_id, "Primero elige un tema de la lista.", 
-                         reply_markup=get_keyboard_temas(chat_id))
+            send_message(chat_id, "Primero selecciona un tema.", reply_markup=get_keyboard_temas(chat_id))
             return "ok", 200
         
         if user_text == OP_PREGUNTA:
             user_state[chat_id]["ultima_accion"] = OP_PREGUNTA
-            send_message(chat_id, "Dime tu duda técnica sobre este tema y te responderé brevemente:")
+            send_message(chat_id, "Escribe tu duda técnica y te responderé en un momento:")
         else:
             typing(chat_id)
             res = gemini_generate(build_prompt(tema, user_text))
-            # Aquí guardaríamos en Google Sheets si ya tienes la función
             send_message(chat_id, res, reply_markup=keyboard_acciones())
         return "ok", 200
 
-    # 6. PROCESAR PREGUNTA LIBRE
-    if state.get("ultima_accion") == OP_PREGUNTA:
-        tema = state.get("tema")
+    # 6. CAPTURAR DUDA LIBRE
+    if user_state[chat_id].get("ultima_accion") == OP_PREGUNTA:
+        tema = user_state[chat_id].get("tema")
         typing(chat_id)
         res = gemini_generate(build_prompt(tema, OP_PREGUNTA, user_text))
         user_state[chat_id]["ultima_accion"] = None 
         send_message(chat_id, res, reply_markup=keyboard_acciones())
         return "ok", 200
 
-    
-    chat_id = data["message"]["chat"]["id"]
-    user_text = data["message"].get("text", "")
-    state = user_state.get(chat_id, {})
-
-    # Lógica de Navegación
-    if user_text == "/start" or user_text == "🔙 Volver a grupos":
-        user_state[chat_id] = {}
-        send_message(chat_id, "Selecciona tu grupo:", reply_markup=keyboard_grupos())
-    
-    elif user_text == OP_VOLVER:
-        user_state[chat_id] = {"grupo": state.get("grupo")}
-        send_message(chat_id, "Elige un tema:", reply_markup=get_keyboard_temas(chat_id))
-
-    # Selección de Temas (Simplificado)
-    elif user_text in TODOS_LOS_TEMAS:
-        user_state[chat_id] = {"grupo": state.get("grupo"), "tema": user_text}
-        send_message(chat_id, f"Has elegido {user_text}. ¿Qué quieres hacer?", reply_markup=keyboard_acciones())
-
-    # Acciones del Botón
-    elif user_text in ACCIONES:
-        tema = state.get("tema")
-        if not tema:
-            send_message(chat_id, "Primero elige un tema.")
-            return "ok", 200
-        
-        user_state[chat_id]["ultima_accion"] = user_text
-        
-        if user_text == OP_PREGUNTA:
-            send_message(chat_id, "Dime tu duda técnica y te respondo de inmediato:")
-        else:
-            # Para ejercicio o lectura, respondemos directo
-            res = gemini_generate(build_prompt(tema, user_text))
-            send_message(chat_id, res, reply_markup=keyboard_acciones())
-
-    # Respuesta a "Preguntale al profesor" (cuando el usuario escribe la duda)
-    elif state.get("ultima_accion") == OP_PREGUNTA:
-        tema = state.get("tema")
-        res = gemini_generate(build_prompt(tema, OP_PREGUNTA, user_text))
-        user_state[chat_id]["ultima_accion"] = None # Resetear acción
-        send_message(chat_id, res, reply_markup=keyboard_acciones())
-
     return "ok", 200
+
+@app.route('/')
+def index():
+    return "Bot funcionando correctamente", 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
