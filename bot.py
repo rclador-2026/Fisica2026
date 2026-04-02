@@ -6,11 +6,13 @@ import json
 
 app = Flask(__name__)
 
+# --- Configuración ---
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 client = genai.Client(api_key=GEMINI_API_KEY)
-URL_SHEETS = "https://script.google.com/macros/s/AKfycbyVL89rtoJLTxBJSnj24zuUrPUqv9dIa8gfRQ8AuG36m7df_MZnEyRCkssMNQ8HOpwU/exec" # Pon tu URL de Google Apps Script
+URL_SHEETS = "TU_NUEVA_URL_AQUI" # <--- PEGA LA URL NUEVA AQUÍ
 
+# --- Listas ---
 GRUPOS = ["🔬 Cientifico A", "🔬 Cientifico B", "⚙️ Ingenieria"]
 TEMAS_CIENTIFICO = ["📐 Herramientas Matematicas", "🍎 Leyes de Newton", "🚀 Cinematica", "➡️ Movimientos en 1D", "↗️ Movimientos en 2D", "⚡ Trabajo Mecanico y Energia"]
 TEMAS_INGENIERIA = ["📐 Herramientas Matematicas", "⚡ Electrostatica", "🔌 Circuitos Electricos", "🧲 Magnetismo", "🔁 Induccion", "⚛️ Fisica Moderna"]
@@ -23,24 +25,34 @@ def verificar_registro(chat_id):
     except:
         return {"existe": False}
 
-def gemini_generate(prompt):
+def gemini_generate(prompt, grupo="General"):
     try:
-        # Instrucciones mucho más estrictas para el tono del profesor
         instrucciones = (
-            "Actúa como un profesor de física de bachillerato en Uruguay. "
-            "Tu tono debe ser formal, académico, serio y extremadamente conciso. "
-            "No uses lenguaje coloquial excesivo (evita 'pila', 'vueltas', 'nomás'). "
-            "No saludes en cada respuesta ni te presentes si ya estás en una conversación. "
-            "Si te piden una fórmula o definición, dalo de inmediato con su unidad en el SI. "
-            "Usa lenguaje técnico correcto. Responde directo al punto."
+            f"Eres un profesor de física de Uruguay para el grupo de {grupo}. "
+            "Responde de forma técnica, formal y muy breve. Ve directo al punto. "
+            "No saludes ni divagues."
         )
         response = client.models.generate_content(
             model="gemini-2.5-flash", 
-            contents=f"Eres un profesor de física uruguayo. Responde directo y breve. {prompt}"
+            contents=f"{instrucciones}\n\nAlumno: {prompt}"
         )
         return response.candidates[0].content.parts[0].text
     except:
-        return "El profesor está en el laboratorio. Intenta en un momento."
+        return "Consulte nuevamente en un minuto."
+
+def guardar_en_sheets(alumno_id, grupo, tema, tipo, texto_consulta):
+    payload = {
+        "accion": "consulta",
+        "alumno": str(alumno_id),
+        "grupo": grupo,
+        "tema": tema,
+        "tipo": tipo,
+        "consulta": texto_consulta # <--- Nombre clave
+    }
+    try:
+        requests.post(URL_SHEETS, json=payload, timeout=5)
+    except:
+        pass
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
@@ -48,51 +60,56 @@ def webhook():
     if not data or "message" not in data: return "ok", 200
     chat_id = data["message"]["chat"]["id"]
     user_text = data["message"].get("text", "")
-    first_name = data["message"]["from"].get("first_name", "Alumno")
+    user_name = data["message"]["from"].get("first_name", "Alumno")
 
     registro = verificar_registro(chat_id)
 
-    # --- REGISTRO SIMPLIFICADO ---
+    # 1. REGISTRO
     if not registro.get("existe"):
-        # Si elige grupo, lo registramos usando su nombre de Telegram
         if user_text in GRUPOS:
-            payload = {"accion": "registro", "alumno": str(chat_id), "nombre": first_name, "grupo": user_text}
+            payload = {"accion": "registro", "alumno": str(chat_id), "nombre": user_name, "grupo": user_text}
             requests.post(URL_SHEETS, json=payload)
-            send_message(chat_id, f"¡Hola {first_name}! Te registré en {user_text}. Ya puedes usar el bot. Escribe /start.")
+            send_message(chat_id, f"Registrado en {user_text}. Escribe /start para comenzar.")
             return "ok", 200
         
-        # Si no está registrado, solo le mostramos los grupos
-        send_message(chat_id, f"¡Bienvenido {first_name}! Selecciona tu grupo para comenzar:", 
-                     reply_markup={"keyboard": [[{"text": g}] for g in GRUPOS], "one_time_keyboard": True, "resize_keyboard": True})
+        send_message(chat_id, "Selecciona tu grupo:", 
+                     reply_markup={"keyboard": [[{"text": g}] for g in GRUPOS], "resize_keyboard": True})
         return "ok", 200
 
-    # --- FLUJO NORMAL ---
-    grupo_alumno = registro.get("grupo")
-
+    # 2. MENÚ DE TEMAS
+    grupo = registro.get("grupo")
     if user_text == "/start" or "Volver" in user_text:
-        temas = TEMAS_CIENTIFICO if "Cientifico" in grupo_alumno else TEMAS_INGENIERIA
-        send_message(chat_id, f"Menú de {grupo_alumno}. Elige un tema:", 
+        temas = TEMAS_CIENTIFICO if "Cientifico" in grupo else TEMAS_INGENIERIA
+        send_message(chat_id, f"Temas de {grupo}:", 
                      reply_markup={"keyboard": [[{"text": t}] for t in temas], "resize_keyboard": True})
         return "ok", 200
 
-    # Lógica de temas y acciones (Se mantiene igual que antes)
-    tema_elegido = next((t for t in TODOS_LOS_TEMAS if t in user_text), None)
-    if tema_elegido and not any(icon in user_text for icon in ["❓", "📝", "📚"]):
-        send_message(chat_id, f"Sobre {tema_elegido}, ¿qué quieres hacer?", 
-                     reply_markup={"keyboard": [[{"text": f"❓ Ejercicio de {tema_elegido}"}], [{"text": f"📝 Duda sobre {tema_elegido}"}], [{"text": f"📚 Lectura de {tema_elegido}"}], [{"text": "🔙 Volver"}]], "resize_keyboard": True})
+    # 3. ACCIONES DE TEMA
+    tema_detectado = next((t for t in TODOS_LOS_TEMAS if t in user_text), None)
+    if tema_detectado and not any(icon in user_text for icon in ["❓", "📝", "📚"]):
+        send_message(chat_id, f"¿Qué necesitas de {tema_detectado}?", 
+                     reply_markup={
+                         "keyboard": [
+                             [{"text": f"❓ Ejercicio de {tema_detectado}"}],
+                             [{"text": f"📝 Duda sobre {tema_detectado}"}],
+                             [{"text": f"📚 Lectura de {tema_detectado}"}],
+                             [{"text": "🔙 Volver"}]
+                         ], "resize_keyboard": True
+                     })
         return "ok", 200
 
-    if any(x in user_text for x in ["❓", "📝", "📚"]):
-        # Procesar ejercicio/duda/lectura usando el truco del botón
+    # 4. RESPUESTA TÉCNICA
+    if user_text not in GRUPOS:
         typing(chat_id)
-        res = gemini_generate(user_text)
+        res = gemini_generate(user_text, grupo)
         send_message(chat_id, res)
-        return "ok", 200
+        
+        # Guardar si es una duda real
+        tipo = "Duda"
+        if "❓" in user_text: tipo = "Ejercicio"
+        if "📚" in user_text: tipo = "Lectura"
+        guardar_en_sheets(chat_id, grupo, "Física", tipo, user_text)
 
-    # Consulta libre
-    typing(chat_id)
-    res = gemini_generate(user_text)
-    send_message(chat_id, res)
     return "ok", 200
 
 def send_message(chat_id, text, reply_markup=None):
