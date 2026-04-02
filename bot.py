@@ -14,7 +14,7 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 # ── Estado en memoria ─────────────────────────────────────────────────────────
 user_state = {}
 
-# ── Listas de Datos (Temas y Grupos) ──────────────────────────────────────────
+# ── Listas de Datos ───────────────────────────────────────────────────────────
 GRUPOS_CIENTIFICO = ["🔬 Cientifico A", "🔬 Cientifico B"]
 GRUPOS_INGENIERIA = ["⚙️ Ingenieria"]
 
@@ -68,21 +68,21 @@ def keyboard_acciones():
 # ── Registro en Google Sheets ─────────────────────────────────────────────────
 
 def guardar_en_sheets(alumno, tema, tipo, consulta):
-    # REEMPLAZA ESTO con tu URL de Google Apps Script (termina en /exec)
-    URL_SHEETS = "https://script.google.com/macros/s/AKfycbxsNPbeJH4OoFb78cwtRERAfiJ64yeRpd4WpR2ceqX1kEjtuQT8sc0Ynu3BFcuAbnaN/exec"
+    # REEMPLAZA ESTO con tu URL de Google Apps Script (/exec)
+    URL_SHEETS = "TU_URL_AQUI"
     payload = {"alumno": str(alumno), "tema": tema, "tipo": tipo, "consulta": consulta}
     try:
         requests.post(URL_SHEETS, json=payload, timeout=5)
     except:
         pass
 
-# ── Lógica de IA (Gemini 1.5 Flash - Estable) ─────────────────────────────────
+# ── Lógica de IA (Gemini 2.0 Flash) ───────────────────────────────────────────
 
 def gemini_generate(prompt):
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-flash", 
-            contents=f"Eres un profesor de física uruguayo. Responde DIRECTO, sin saludos ni introducciones. Máximo 2 párrafos. {prompt}"
+            model="gemini-2.0-flash", 
+            contents=f"Eres un profesor de física uruguayo. Responde DIRECTO, sin saludos. Máximo 2 párrafos. {prompt}"
         )
         return response.candidates[0].content.parts[0].text
     except Exception as e:
@@ -95,7 +95,7 @@ def build_prompt(tema, accion, user_text=None):
     elif accion == OP_LECTURA:
         return f"Dime 3 recursos específicos para estudiar {tema}."
     elif accion == OP_PREGUNTA:
-        return f"Responde esta duda técnica sobre {tema}: {user_text}"
+        return f"Responde esta duda sobre {tema}: {user_text}"
     return f"Explica brevemente: {user_text}"
 
 # ── Helpers de Telegram ───────────────────────────────────────────────────────
@@ -122,19 +122,20 @@ def webhook():
     chat_id = data["message"]["chat"]["id"]
     user_text = data["message"].get("text", "")
     
+    # Inicializamos el estado si no existe
     if chat_id not in user_state:
         user_state[chat_id] = {}
 
-    # 1. COMANDOS DE INICIO
+    # 1. COMANDOS DE INICIO / RESET
     if user_text == "/start" or user_text == "🔙 Volver a grupos":
-        user_state[chat_id] = {}
-        send_message(chat_id, "¡Hola! Selecciona tu grupo:", reply_markup=keyboard_grupos())
+        user_state[chat_id] = {} # Limpieza total
+        send_message(chat_id, "¡Bienvenido! Selecciona tu grupo:", reply_markup=keyboard_grupos())
         return "ok", 200
 
     # 2. SELECCIÓN DE GRUPO
     if user_text in GRUPOS_CIENTIFICO or user_text in GRUPOS_INGENIERIA:
         user_state[chat_id]["grupo"] = user_text
-        send_message(chat_id, f"Grupo {user_text}. Elige un tema:", reply_markup=get_keyboard_temas(chat_id))
+        send_message(chat_id, f"Has elegido {user_text}. Elige un tema:", reply_markup=get_keyboard_temas(chat_id))
         return "ok", 200
 
     # 3. VOLVER A TEMAS
@@ -142,34 +143,46 @@ def webhook():
         send_message(chat_id, "Elige un tema de la lista:", reply_markup=get_keyboard_temas(chat_id))
         return "ok", 200
 
-    # 4. SELECCIÓN DE TEMAS
-    if user_text in TODOS_LOS_TEMAS:
-        user_state[chat_id]["tema"] = user_text 
-        send_message(chat_id, f"Has elegido {user_text}. ¿Qué quieres hacer?", reply_markup=keyboard_acciones())
+    # 4. SELECCIÓN DE TEMAS (Detección Blindada)
+    tema_encontrado = None
+    for t in TODOS_LOS_TEMAS:
+        if t in user_text:
+            tema_encontrado = t
+            break
+            
+    if tema_encontrado:
+        user_state[chat_id]["tema"] = tema_encontrado
+        send_message(chat_id, f"Has elegido {tema_encontrado}. ¿Qué quieres hacer?", reply_markup=keyboard_acciones())
         return "ok", 200
 
     # 5. ACCIONES DE BOTÓN
     if user_text in ACCIONES:
-        tema = user_state[chat_id].get("tema")
-        if not tema:
-            send_message(chat_id, "Primero selecciona un tema.", reply_markup=get_keyboard_temas(chat_id))
+        # Recuperamos el tema guardado
+        tema_actual = user_state[chat_id].get("tema")
+        
+        if not tema_actual:
+            send_message(chat_id, "No tengo un tema seleccionado. Por favor, elige uno:", 
+                         reply_markup=get_keyboard_temas(chat_id))
             return "ok", 200
         
         if user_text == OP_PREGUNTA:
             user_state[chat_id]["ultima_accion"] = OP_PREGUNTA
-            send_message(chat_id, "Dime tu duda técnica:")
+            send_message(chat_id, "Dime tu duda técnica sobre este tema:")
         else:
             typing(chat_id)
-            res = gemini_generate(build_prompt(tema, user_text))
+            res = gemini_generate(build_prompt(tema_actual, user_text))
             send_message(chat_id, res, reply_markup=keyboard_acciones())
         return "ok", 200
 
-    # 6. PROCESAR PREGUNTA LIBRE
+    # 6. CAPTURA DE PREGUNTA LIBRE
     if user_state[chat_id].get("ultima_accion") == OP_PREGUNTA:
-        tema = user_state[chat_id].get("tema")
+        tema_actual = user_state[chat_id].get("tema")
         typing(chat_id)
-        res = gemini_generate(build_prompt(tema, OP_PREGUNTA, user_text))
-        guardar_en_sheets(chat_id, tema, "Duda Alumno", user_text)
+        res = gemini_generate(build_prompt(tema_actual, OP_PREGUNTA, user_text))
+        
+        # Guardamos en Sheets
+        guardar_en_sheets(chat_id, tema_actual, "Duda Alumno", user_text)
+        
         user_state[chat_id]["ultima_accion"] = None 
         send_message(chat_id, res, reply_markup=keyboard_acciones())
         return "ok", 200
