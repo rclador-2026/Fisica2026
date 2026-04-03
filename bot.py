@@ -418,8 +418,36 @@ def webhook():
             break
 
     if accion_detectada:
-        _estado[chat_id] = {"accion": accion_detectada, "tema": tema_de_accion}
-        send_message(chat_id, f"Perfecto. Escribi tu {accion_detectada} especifica sobre *{tema_de_accion}* y te respondo.")
+        if accion_detectada == "duda":
+            # La duda la escribe el alumno
+            _estado[chat_id] = {"accion": "duda", "tema": tema_de_accion}
+            send_message(chat_id, f"Perfecto. Escribi tu duda especifica sobre *{tema_de_accion}* y te respondo.")
+        elif accion_detectada == "ejercicio":
+            # Gemini genera el ejercicio de inmediato
+            typing(chat_id)
+            prompt = f"Genera un ejercicio de practica sobre '{tema_de_accion}' adaptado al nivel {nivel_alumno}."
+            historial = cargar_historial(chat_id)
+            respuesta = gemini_tutor(prompt, grupo_alumno, nivel_alumno, historial)
+            send_message(chat_id, f"📝 *Ejercicio — {tema_de_accion}*\n\n{respuesta}")
+            agregar_al_historial(chat_id, "user", prompt)
+            agregar_al_historial(chat_id, "assistant", respuesta)
+            if tema_de_accion not in temas_vistos:
+                temas_vistos.append(tema_de_accion)
+                actualizar_perfil(chat_id, nivel_alumno, temas_vistos)
+            guardar_consulta(chat_id, grupo_alumno, tema_de_accion, "Ejercicio", prompt)
+        elif accion_detectada == "lectura":
+            # Gemini recomienda una lectura de inmediato
+            typing(chat_id)
+            prompt = f"Recomienda un texto o recurso de lectura simple y claro sobre '{tema_de_accion}' para un alumno de bachillerato nivel {nivel_alumno}. Explica brevemente de que trata y por que es util."
+            historial = cargar_historial(chat_id)
+            respuesta = gemini_tutor(prompt, grupo_alumno, nivel_alumno, historial)
+            send_message(chat_id, f"📚 *Lectura recomendada — {tema_de_accion}*\n\n{respuesta}")
+            agregar_al_historial(chat_id, "user", prompt)
+            agregar_al_historial(chat_id, "assistant", respuesta)
+            if tema_de_accion not in temas_vistos:
+                temas_vistos.append(tema_de_accion)
+                actualizar_perfil(chat_id, nivel_alumno, temas_vistos)
+            guardar_consulta(chat_id, grupo_alumno, tema_de_accion, "Lectura", prompt)
         return "ok", 200
 
     # --- FLUJO 9: Respuesta con tutor (historial + nivel) ---
