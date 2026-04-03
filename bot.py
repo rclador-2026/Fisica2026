@@ -425,7 +425,10 @@ def webhook():
         elif accion_detectada == "ejercicio":
             # Gemini genera el ejercicio de inmediato
             typing(chat_id)
-            prompt = f"Genera un ejercicio de practica sobre '{tema_de_accion}' adaptado al nivel {nivel_alumno}."
+            prompt = (
+                f"Eres el profesor. Crea un ejercicio original sobre '{tema_de_accion}' para nivel {nivel_alumno}. "
+                "Incluye el enunciado completo y luego la solucion paso a paso al final."
+            )
             historial = cargar_historial(chat_id)
             respuesta = gemini_tutor(prompt, grupo_alumno, nivel_alumno, historial)
             send_message(chat_id, f"📝 *Ejercicio — {tema_de_accion}*\n\n{respuesta}")
@@ -438,7 +441,11 @@ def webhook():
         elif accion_detectada == "lectura":
             # Gemini recomienda una lectura de inmediato
             typing(chat_id)
-            prompt = f"Recomienda un texto o recurso de lectura simple y claro sobre '{tema_de_accion}' para un alumno de bachillerato nivel {nivel_alumno}. Explica brevemente de que trata y por que es util."
+            prompt = (
+                f"Eres el profesor. Redacta una explicacion teorica breve y clara sobre '{tema_de_accion}' "
+                f"para un alumno de bachillerato nivel {nivel_alumno}. "
+                "Incluye los conceptos clave y un ejemplo concreto al final."
+            )
             historial = cargar_historial(chat_id)
             respuesta = gemini_tutor(prompt, grupo_alumno, nivel_alumno, historial)
             send_message(chat_id, f"📚 *Lectura recomendada — {tema_de_accion}*\n\n{respuesta}")
