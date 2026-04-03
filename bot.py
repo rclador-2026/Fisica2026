@@ -1,18 +1,27 @@
 import os
 import requests
-from flask import Flask, request, jsonify
+from flask import Flask, request
 from google import genai
 
 app = Flask(__name__)
 
-# Configuración (Usa tus variables de entorno en Render)
+# Configuración de variables de entorno en Render
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
-URL_SHEETS = os.environ.get("URL_SHEETS") # La URL de tu Apps Script
+URL_SHEETS = os.environ.get("URL_SHEETS")
 
 client = genai.Client(api_key=GEMINI_KEY)
 
-def llamar_gemini(prompt_sistema, mensaje_usuario):
+def llamar_gemini(mensaje_usuario):
+    # Prompt optimizado para tus alumnos de bachillerato en Uruguay
+    prompt_sistema = """
+    Eres PhysiBot, un tutor experto en Física para secundaria en Uruguay.
+    Tu objetivo es ayudar a estudiantes de los niveles Científico e Ingeniería.
+    - Usa un lenguaje cercano ('che', 'gurises', 'impecable').
+    - Si te piden ejercicios, genera uno numérico y explica los conceptos.
+    - Prioriza temas como Leyes de Newton, Termodinámica y Electromagnetismo.
+    """
+    
     response = client.models.generate_content(
         model="gemini-2.0-flash",
         config={'system_instruction': prompt_sistema},
@@ -29,48 +38,40 @@ def webhook():
     user_id = str(data["message"]["from"]["id"])
     user_msg = data["message"].get("text", "")
 
-    # 1. CONSULTAR ESTADO AL SHEETS (¿Qué estaba haciendo el alumno?)
-    # Usamos el parámetro historial=1 que definimos en el Apps Script
-    res_sheets = requests.get(f"{URL_SHEETS}?id={user_id}&historial=1")
-    datos_previos = res_sheets.json()
-    ultimo_ejercicio = datos_previos.get("historial", "")
+    # 1. Consultar si el alumno existe en el Google Sheet
+    res_sheets = requests.get(f"{URL_SHEETS}?id={user_id}")
+    datos_alumno = res_sheets.json()
 
-    # 2. DECIDIR SI ES UNA RESPUESTA O UNA CONSULTA NUEVA
-    # Si el último mensaje guardado tiene un "Enunciado" y el usuario manda algo corto (un número o unidad)
-    es_posible_respuesta = "Enunciado:" in ultimo_ejercicio and len(user_msg) < 15
-
-    if es_posible_respuesta:
-        prompt_instruccion = f"""
-        Actúa como un profesor de Física uruguayo. 
-        El alumno está resolviendo este ejercicio previo: {ultimo_ejercicio}
-        Su respuesta actual es: "{user_msg}"
-        
-        TAREA:
-        1. Si la respuesta es correcta (considerando redondeos y unidades), felicítalo y dile: "¡Impecable! ¿Querés que sigamos con otro o tenés alguna duda?".
-        2. Si es incorrecta o le faltan unidades, no le des la solución. Explícale el error (ej: 'revisá el pasaje de km a metros') y pídele que lo intente de nuevo.
-        3. Mantén el tono de 'profe de liceo' (usa 'che', 'gurises', etc).
-        """
+    if not datos_alumno.get("existe"):
+        # Lógica de registro para alumnos nuevos
+        if "/" in user_msg and len(user_msg.split("/")) == 2:
+            nombre, grupo = user_msg.split("/")
+            requests.post(URL_SHEETS, json={
+                "accion": "registro",
+                "alumno": user_id,
+                "nombre": nombre.strip(),
+                "grupo": grupo.strip()
+            })
+            respuesta_bot = f"¡Registrado impecable, {nombre}! Ya podés consultarme lo que necesites de Física."
+        else:
+            respuesta_bot = "¡Hola! No te tengo en la lista del Liceo 35. Decime tu nombre y grupo así: Nombre / Grupo (ejemplo: Juan Perez / 6to CB)."
     else:
-        prompt_instruccion = """
-        Eres PhysiBot, un tutor de Física para bachillerato en Uruguay.
-        Si el usuario te pide ejercicios, SIEMPRE empieza el texto con 'Enunciado:' seguido del problema.
-        Si el usuario solo saluda, preséntate y ofrece ayuda con Newton, Termodinámica o Cinemática.
-        """
+        # 2. Respuesta educativa con Gemini
+        respuesta_bot = llamar_gemini(user_msg)
+        
+        # 3. Guardar la consulta para tu seguimiento docente
+        requests.post(URL_SHEETS, json={
+            "accion": "consulta",
+            "alumno": user_id,
+            "grupo": datos_alumno.get("grupo"),
+            "tema": "General",
+            "tipo": "Chat",
+            "consulta": user_msg
+        })
 
-    # 3. GENERAR RESPUESTA CON GEMINI
-    respuesta_ai = llamar_gemini(prompt_instruccion, user_msg)
-
-    # 4. ENVIAR A TELEGRAM
+    # Enviar respuesta a Telegram
     requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", 
-                  json={"chat_id": user_id, "text": respuesta_ai})
-
-    # 5. ACTUALIZAR EL HISTORIAL EN EL SHEETS
-    # Guardamos lo que el bot acaba de decir para que en la próxima vuelta sepamos qué ejercicio hay pendiente
-    requests.post(URL_SHEETS, json={
-        "accion": "save_historial",
-        "alumno": user_id,
-        "historial": respuesta_ai
-    })
+                  json={"chat_id": user_id, "text": respuesta_bot})
 
     return "OK", 200
 
