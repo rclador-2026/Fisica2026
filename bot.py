@@ -16,7 +16,7 @@ app = Flask(__name__)
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 client = genai.Client(api_key=GEMINI_API_KEY)
-URL_SHEETS = "https://script.google.com/macros/s/AKfycbyVL89rtoJLTxBJSnj24zuUrPUqv9dIa8gfRQ8AuG36m7df_MZnEyRCkssMNQ8HOpwU/exec"
+URL_SHEETS = "https://script.google.com/macros/s/AKfycbzU8Z928dfVKv8ccnMrxtRiJwAoPPNp9zgBBGzZT3dYfRgTsnLIieKyj78BdErYkvQ2/exec"
 
 MAX_HISTORIAL = 10  # Máximo de mensajes a recordar por alumno
 
@@ -38,10 +38,17 @@ SUBTEMAS = {
 }
 TODOS_LOS_SUBTEMAS = [s for lista in SUBTEMAS.values() for s in lista]
 
+import random
+
 # --- Caches en memoria ---
 _user_cache: dict = {}       # {chat_id: {existe, grupo, nombre, nivel, temas_vistos: []}}
 _historial_cache: dict = {}  # {chat_id: [{role, content}, ...]}
 _estado: dict = {}           # {chat_id: {tema, accion, eval_activa, eval_pregunta, eval_tema}}
+
+# Cache de contenido pre-generado
+# Estructura: {"ejercicios": {tema: {nivel: [texto, ...]}}, "lecturas": {tema: {nivel: [...]}}}
+_contenido: dict = {"ejercicios": {}, "lecturas": {}}
+_contenido_cargado: bool = False
 
 
 # ============================================================
@@ -127,6 +134,52 @@ def guardar_historial_sheets(chat_id: int, historial: list):
         except Exception as e:
             log.warning(f"Error guardando historial {chat_id}: {e}")
     threading.Thread(target=_sync, daemon=True).start()
+
+# ============================================================
+# CONTENIDO PRE-GENERADO (Ejercicios y Lecturas)
+# ============================================================
+
+def cargar_contenido_sheets():
+    global _contenido, _contenido_cargado
+    try:
+        r = requests.get(f"{URL_SHEETS}?contenido=1", timeout=6)
+        if r.status_code == 200:
+            items = r.json().get("items", [])
+            for item in items:
+                tipo  = item.get("tipo")
+                tema  = item.get("tema")
+                nivel = item.get("nivel")
+                texto = item.get("texto")
+                if tipo and tema and nivel and texto:
+                    _contenido.setdefault(tipo, {}).setdefault(tema, {}).setdefault(nivel, [])
+                    if texto not in _contenido[tipo][tema][nivel]:
+                        _contenido[tipo][tema][nivel].append(texto)
+            total = sum(len(v) for t in _contenido.values() for v in t.values())
+            log.info(f"Contenido cargado desde Sheets: {total} items")
+    except Exception as e:
+        log.warning(f"Error cargando contenido: {e}")
+    _contenido_cargado = True
+
+def obtener_contenido(tipo: str, tema: str, nivel: str):
+    global _contenido_cargado
+    if not _contenido_cargado:
+        cargar_contenido_sheets()
+    items = _contenido.get(tipo, {}).get(tema, {}).get(nivel, [])
+    return random.choice(items) if items else None
+
+def guardar_nuevo_contenido(tipo: str, tema: str, nivel: str, texto: str):
+    _contenido.setdefault(tipo, {}).setdefault(tema, {}).setdefault(nivel, [])
+    if texto not in _contenido[tipo][tema][nivel]:
+        _contenido[tipo][tema][nivel].append(texto)
+    def _sync():
+        payload = {"accion": "save_contenido", "tipo": tipo, "tema": tema, "nivel": nivel, "texto": texto}
+        try:
+            requests.post(URL_SHEETS, json=payload, timeout=5)
+            log.info(f"Contenido guardado: {tipo} / {tema} / {nivel}")
+        except Exception as e:
+            log.warning(f"Error guardando contenido: {e}")
+    threading.Thread(target=_sync, daemon=True).start()
+
 
 def guardar_consulta(alumno_id: int, grupo: str, tema: str, tipo: str, texto: str):
     """Guarda consulta en Sheets (async)."""
@@ -453,38 +506,46 @@ def webhook():
             _estado[chat_id] = {"accion": "duda", "tema": tema_de_accion}
             send_message(chat_id, f"Perfecto. Escribi tu duda especifica sobre *{tema_de_accion}* y te respondo.")
         elif accion_detectada == "ejercicio":
-            # Gemini genera el ejercicio de inmediato
-            typing(chat_id)
-            prompt = (
-                f"Eres el profesor. Crea un ejercicio original sobre '{tema_de_accion}' para nivel {nivel_alumno}. "
-                "Incluye el enunciado completo y luego la solucion paso a paso al final."
-            )
-            historial = cargar_historial(chat_id)
-            respuesta = gemini_tutor(prompt, grupo_alumno, nivel_alumno, historial)
+            # Hibrido: cache primero, Gemini como respaldo
+            respuesta = obtener_contenido("ejercicios", tema_de_accion, nivel_alumno)
+            if respuesta:
+                log.info(f"Ejercicio desde cache: {tema_de_accion} / {nivel_alumno}")
+            else:
+                typing(chat_id)
+                prompt = (
+                    f"Eres el profesor. Crea un ejercicio original sobre '{tema_de_accion}' para nivel {nivel_alumno}. "
+                    "Incluye el enunciado completo y luego la solucion paso a paso al final."
+                )
+                respuesta = gemini_tutor(prompt, grupo_alumno, nivel_alumno, cargar_historial(chat_id))
+                guardar_nuevo_contenido("ejercicios", tema_de_accion, nivel_alumno, respuesta)
             send_message(chat_id, f"📝 *Ejercicio — {tema_de_accion}*\n\n{respuesta}")
-            agregar_al_historial(chat_id, "user", prompt)
+            agregar_al_historial(chat_id, "user", f"Ejercicio sobre {tema_de_accion}")
             agregar_al_historial(chat_id, "assistant", respuesta)
             if tema_de_accion not in temas_vistos:
                 temas_vistos.append(tema_de_accion)
                 actualizar_perfil(chat_id, nivel_alumno, temas_vistos)
-            guardar_consulta(chat_id, grupo_alumno, tema_de_accion, "Ejercicio", prompt)
+            guardar_consulta(chat_id, grupo_alumno, tema_de_accion, "Ejercicio", f"Ejercicio sobre {tema_de_accion}")
         elif accion_detectada == "lectura":
-            # Gemini recomienda una lectura de inmediato
-            typing(chat_id)
-            prompt = (
-                f"Eres el profesor. Redacta una explicacion teorica breve y clara sobre '{tema_de_accion}' "
-                f"para un alumno de bachillerato nivel {nivel_alumno}. "
-                "Incluye los conceptos clave y un ejemplo concreto al final."
-            )
-            historial = cargar_historial(chat_id)
-            respuesta = gemini_tutor(prompt, grupo_alumno, nivel_alumno, historial)
-            send_message(chat_id, f"📚 *Lectura recomendada — {tema_de_accion}*\n\n{respuesta}")
-            agregar_al_historial(chat_id, "user", prompt)
+            # Hibrido: cache primero, Gemini como respaldo
+            respuesta = obtener_contenido("lecturas", tema_de_accion, nivel_alumno)
+            if respuesta:
+                log.info(f"Lectura desde cache: {tema_de_accion} / {nivel_alumno}")
+            else:
+                typing(chat_id)
+                prompt = (
+                    f"Eres el profesor. Redacta una explicacion teorica breve y clara sobre '{tema_de_accion}' "
+                    f"para un alumno de bachillerato nivel {nivel_alumno}. "
+                    "Incluye los conceptos clave y un ejemplo concreto al final."
+                )
+                respuesta = gemini_tutor(prompt, grupo_alumno, nivel_alumno, cargar_historial(chat_id))
+                guardar_nuevo_contenido("lecturas", tema_de_accion, nivel_alumno, respuesta)
+            send_message(chat_id, f"📚 *Lectura — {tema_de_accion}*\n\n{respuesta}")
+            agregar_al_historial(chat_id, "user", f"Lectura sobre {tema_de_accion}")
             agregar_al_historial(chat_id, "assistant", respuesta)
             if tema_de_accion not in temas_vistos:
                 temas_vistos.append(tema_de_accion)
                 actualizar_perfil(chat_id, nivel_alumno, temas_vistos)
-            guardar_consulta(chat_id, grupo_alumno, tema_de_accion, "Lectura", prompt)
+            guardar_consulta(chat_id, grupo_alumno, tema_de_accion, "Lectura", f"Lectura sobre {tema_de_accion}")
         return "ok", 200
 
     # --- FLUJO 9: Respuesta con tutor (historial + nivel) ---
