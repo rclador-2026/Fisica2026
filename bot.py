@@ -28,6 +28,16 @@ TEMAS_INGENIERIA = ["📐 Herramientas Matematicas", "⚡ Electrostatica", "🔌
                     "🧲 Magnetismo", "🔁 Induccion", "⚛️ Fisica Moderna"]
 TODOS_LOS_TEMAS = list(set(TEMAS_CIENTIFICO + TEMAS_INGENIERIA))
 
+# Subtemas por tema (se muestran como submenu antes de Ejercicio/Duda/Lectura)
+SUBTEMAS = {
+    "📐 Herramientas Matematicas": [
+        "📏 Ecuaciones",
+        "📐 Trigonometria",
+        "➕ Vectores"
+    ]
+}
+TODOS_LOS_SUBTEMAS = [s for lista in SUBTEMAS.values() for s in lista]
+
 # --- Caches en memoria ---
 _user_cache: dict = {}       # {chat_id: {existe, grupo, nombre, nivel, temas_vistos: []}}
 _historial_cache: dict = {}  # {chat_id: [{role, content}, ...]}
@@ -270,6 +280,16 @@ def menu_principal(chat_id: int, grupo: str):
         reply_markup={"keyboard": keyboard, "resize_keyboard": True}
     )
 
+def menu_subtemas(chat_id: int, tema_padre: str):
+    subtemas = SUBTEMAS.get(tema_padre, [])
+    keyboard = [[{"text": s}] for s in subtemas]
+    keyboard.append([{"text": "🔙 Volver al inicio"}])
+    send_message(
+        chat_id,
+        f"Selecciona un subtema de *{tema_padre}*:",
+        reply_markup={"keyboard": keyboard, "resize_keyboard": True}
+    )
+
 def menu_acciones(chat_id: int, tema: str):
     send_message(
         chat_id,
@@ -400,13 +420,23 @@ def webhook():
     tema_detectado = next((t for t in TODOS_LOS_TEMAS if t == user_text), None)
     if tema_detectado:
         _estado.pop(chat_id, None)
-        menu_acciones(chat_id, tema_detectado)
+        if tema_detectado in SUBTEMAS:
+            menu_subtemas(chat_id, tema_detectado)
+        else:
+            menu_acciones(chat_id, tema_detectado)
+        return "ok", 200
+
+    # --- FLUJO 7.5: Seleccion de subtema ---
+    subtema_detectado = next((s for s in TODOS_LOS_SUBTEMAS if s == user_text), None)
+    if subtema_detectado:
+        _estado.pop(chat_id, None)
+        menu_acciones(chat_id, subtema_detectado)
         return "ok", 200
 
     # --- FLUJO 8: Seleccion de accion (Ejercicio / Duda / Lectura) ---
     accion_detectada = None
     tema_de_accion = None
-    for tema in TODOS_LOS_TEMAS:
+    for tema in TODOS_LOS_TEMAS + TODOS_LOS_SUBTEMAS:
         if user_text == f"❓ Ejercicio de {tema}":
             accion_detectada, tema_de_accion = "ejercicio", tema
             break
