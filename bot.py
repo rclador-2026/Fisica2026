@@ -16,7 +16,7 @@ app = Flask(__name__)
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN')
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 client = genai.Client(api_key=GEMINI_API_KEY)
-URL_SHEETS = "https://script.google.com/macros/s/AKfycbyI693LEuexsonUvLWVRolzJY9gEmFQoIy-Q5DIG_Gx1pLlr-kGEdwHu6DDEejp9j3x/exec"
+URL_SHEETS = "https://script.google.com/macros/s/AKfycbxwrJztRIbVseBYV8d3WjNPdFvnMpRyCE7Ghr_OpR69-AzYGfbJCh7BOzhTpsa198c2/exec"
 
 MAX_HISTORIAL = 10  # Máximo de mensajes a recordar por alumno
 
