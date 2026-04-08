@@ -183,7 +183,7 @@ def gemini_tutor(prompt: str, grupo: str, nivel: str, historial: list) -> str:
     else:
         contents = f"{instrucciones}\n\nPregunta: {prompt}"
     try:
-        response = client.models.generate_content(model="gemini-2.5-flash", contents=contents)
+        response = client.models.generate_content(model="gemini-2.5", contents=contents)
         return response.candidates[0].content.parts[0].text
     except Exception as e:
         log.error(f"Error en gemini_tutor: {e}")
